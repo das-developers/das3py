@@ -774,20 +774,20 @@ static PyObject* _varArrayId2Py(const DasVar* pVar)
  * map; everything else answers None so callers can test one key. */
 static PyObject* _varIdxMap2PyList(const DasVar* pVar, int nDsRank)
 {
-	const DasGen* pGen = DasVar_gen(pVar);
-	if((pGen == NULL)||(DasGen_type(pGen) != gtArray)) Py_RETURN_NONE;
+	int8_t aMap[VARIDX_MAX];
+	int nExtRank = DasVar_idxMap(pVar, aMap);
+	if(nExtRank < 0) Py_RETURN_NONE;
 
-	const DasGenAry* pGenAry = (const DasGenAry*)pGen;
 	PyObject* pList = PyList_New(nDsRank);
 	if(pList == NULL) return NULL;
 
 	for(int i = 0; i < nDsRank; ++i){
 		PyObject* pItem = NULL;
-		if((i >= pGenAry->nExtRank)||(pGenAry->idxmap[i] == VARIDX_UNUSED)){
+		if((i >= nExtRank)||(aMap[i] == VARIDX_UNUSED)){
 			Py_INCREF(Py_None); pItem = Py_None;
 		}
 		else{
-			pItem = PyLong_FromLong(pGenAry->idxmap[i]);
+			pItem = PyLong_FromLong(aMap[i]);
 		}
 		if(pItem == NULL){ Py_DECREF(pList); return NULL; }
 		PyList_SET_ITEM(pList, i, pItem);  /* steals the reference */
@@ -1139,9 +1139,8 @@ static bool _addVars(
 		/* Array binding: stored arrays bind by id, sequences and constants
 		 * are computed into a synthesized array, reference + offset gets
 		 * None and is left to the python Dimension. */
-		const DasGen* pGen = DasVar_gen(pVar);
 		bool bBound = false;
-		if((pGen != NULL) && (DasGen_type(pGen) != gtArray))
+		if((DasVar_gen(pVar) != NULL) && !DasVar_hasAry(pVar))
 			bBound = _materialize(pDs, pDim, pDim->aRoles[v], pVar, pVarDict, pdArys, pdFill);
 		else
 			bBound = _setDictItem(pVarDict, "array",  _varArrayId2Py(pVar)) &&
@@ -1500,7 +1499,7 @@ static PyObject* pyd2_read_file(PyObject* self, PyObject* args)
 
 	DasIO* pIn = new_DasIO_file("das2py", sFile, "r");
 	if(pIn == NULL) return pyd2_setException(g_pPyD2Error);
-	DasIO_model(pIn, -1);  /* Allow all stream versions */
+	DasIO_setModel(pIn, STREAM_MODEL_MIXED);  /* Allow all stream versions */
 
 	DasDsBldr* pBldr = new_DasDsBldr();
 	if(pBldr == NULL) return pyd2_setException(g_pPyD2Error);
@@ -1592,7 +1591,7 @@ static PyObject* pyd2_read_server(PyObject* self, PyObject* args)
 	else
 		pIn = new_DasIO_socket("das2py", res.nSockFd, "r");
 
-	DasIO_model(pIn, -1);  /* Allow all stream versions */
+	DasIO_setModel(pIn, STREAM_MODEL_MIXED);  /* Allow all stream versions */
 
 	DasDsBldr* pBldr = new_DasDsBldr();
 	DasIO_addProcessor(pIn, (StreamHandler*)pBldr);
@@ -1655,7 +1654,7 @@ static PyObject* pyd2_read_cmd(PyObject* self, PyObject* args)
 
 	DasIO* pIn = new_DasIO_cmd("das2py", sCmd);
 	if(pIn == NULL )	return pyd2_setException(g_pPyD2Error);
-	DasIO_model(pIn, -1);  /* Allow all stream versions */
+	DasIO_setModel(pIn, STREAM_MODEL_MIXED);  /* Allow all stream versions */
 
 	DasDsBldr* pBldr = new_DasDsBldr();
 	if(pBldr == NULL){

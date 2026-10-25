@@ -36,7 +36,7 @@
     </object>
   </extData>
 </dataset>
-|Pd|1|2019|2016-01-08T06:58:39.876 29.37 |1984|<Annotation id="annotation_0">  
+|Pd|1|2019|2016-01-08T06:58:39.876 29.37 {1983}<Annotation id="annotation_0">  
   <property name="anchorBorderType" type="enum:org.das2.graph.BorderType" value="NONE"/>
   <property name="anchorOffset" type="String" value="1em,1em"/>
   <property name="anchorPosition" type="enum:org.das2.graph.AnchorPosition" value="NE"/>
