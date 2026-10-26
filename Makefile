@@ -75,8 +75,6 @@ VENV_MOD:=virtualenv
 PY_VER_WARN:=--no-python-version-warning
 endif
 
-# If you can't find libcdf.so CDF_LIBDIR then copy it in from das2C.
-
 # ########################################################################### #
 
 # The extension sources belong here too.  Without them a C-only edit leaves
@@ -121,11 +119,12 @@ build:dist/$(WHEEL_FILE)
 
 # The static das2C library is linked into the extension, so a das2C rebuild
 # must trigger a wheel rebuild too, or you test against the previous library.
+# Likewise for the libcdf.so das2C copies up, it's packaged for pycdf.
 # The sdist step leaves das2py.egg-info in the source tree.  An old pip
 # (9.x, as on python 3.6 hosts) runs with the current directory on sys.path,
 # sees that egg-info, decides das2py is already installed here, and skips the
 # wheel; the test venv then has numpy but no das3.  Remove it right away.
-dist/$(WHEEL_FILE):$(SRC) $(DAS_LIBDIR)/libdas3.a build_$(VDIR)/bin/python
+dist/$(WHEEL_FILE):$(SRC) $(DAS_LIBDIR)/libdas3.a $(DAS_LIBDIR)/libcdf.so build_$(VDIR)/bin/python
 	DAS_INCDIR=$(DAS_INCDIR) DAS_LIBDIR=$(DAS_LIBDIR) build_$(VDIR)/bin/python -m build
 	-rm -r *.egg-info
 

@@ -8,11 +8,15 @@ from os.path import join as pjoin
 from setuptools.command.build_ext import build_ext as _build_ext
 import sys
 
-# Assume das2C is in a parallel directory and that N_ARCH=/ if no
-# other option is set.
+# Assume das2C is in a parallel directory, built for N_ARCH if no other option
+# is set.  Windows.mak ignores N_ARCH and always builds in build.windows, CMake
+# builds need DAS_LIBDIR.
 sCLibDir = os.getenv("DAS_LIBDIR")
 if not sCLibDir:
-	sCLibDir = "../das2C/build."
+	if sys.platform == 'win32':
+		sCLibDir = "../das2C/build.windows"
+	else:
+		sCLibDir = "../das2C/build.%s"%os.getenv("N_ARCH", "")
 
 sCHdrDir = os.getenv("DAS_INCDIR")
 if not sCHdrDir:
@@ -21,23 +25,21 @@ if not sCHdrDir:
 print('(setup.py) DAS_LIBDIR = %s'%sCLibDir)
 print('(setup.py) DAS_INCDIR = %s'%sCHdrDir)
 
-# Package is not complete without libcdf.so, include it.  If it's not
-# listed by CDF_LIBDIR try see if das2C provides it, otherwise give up.
+# Package is not complete without the CDF shared library, include it.  Only
+# take it from das2C, which copies up the one matching the CDF its programs
+# link, so pycdf and das3_cdf can't disagree about the CDF version.
 
 dName = {
 	'win32':'dllcdf.dll','linux':'libcdf.so','linux2':'libcdf.so',
 	'darwin': 'libcdf.dylib'
 }
-sCdfLibDir = os.getenv("CDF_LIBDIR")
-if not sCdfLibDir:
-	sCdfLibDir = sCLibDir
-sCdfSo = pjoin(sCdfLibDir, dName[sys.platform])
+sCdfSo = pjoin(sCLibDir, dName[sys.platform])
 
 if os.path.isfile(sCdfSo):
 	print('(setup.py) Adding %s to module'%sCdfSo)
 	shutil.copy2(sCdfSo, pjoin('.','das3','pycdf'))
 else:
-	print('(setup.py) ERROR: %s missing, set CDF_LIBDIR or build das2C with CDF support'%sCdfSo)
+	print('(setup.py) ERROR: %s missing, build das2C with CDF support'%sCdfSo)
 	sys.exit(3)
 
 

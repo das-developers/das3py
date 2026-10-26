@@ -10,7 +10,7 @@ test_*venv
 wav*.cdf
 ex*.cdf
 das3/pycdf/libcdf.so
-das3/pycdf/libcdf.dynlib
+das3/pycdf/libcdf.dylib
 das3/pycdf/dllcdf.dll
 /co_notes
 session.txt
