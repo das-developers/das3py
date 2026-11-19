@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# das2py documentation build configuration file, created by
+# das3py documentation build configuration file, created by
 # sphinx-quickstart on Thu Jan 24 14:38:04 2019.
 #
 # This file is execfile()d with the current directory set to its
@@ -54,7 +54,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = 'das2py'
+project = 'das3py'
 copyright = '2019-2026, Chris Piker'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -129,7 +129,7 @@ html_theme = 'sphinx_rtd_theme'
 # Guzzle theme options (see theme.conf for more information)
 #html_theme_options = {
 #    # Set the name of the project to appear in the sidebar
-#    "project_nav_name": "das2py",
+#    "project_nav_name": "das3py",
 #	 "touch_icon": '_static/das2_logo_blue.png'
 #}
 #html_theme_options = {
@@ -143,10 +143,10 @@ html_theme = 'sphinx_rtd_theme'
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
-html_title = 'das2py'
+html_title = 'das3py'
 
 # A shorter title for the navigation bar.  Default is the same as html_title.
-html_short_title = 'das2py'
+html_short_title = 'das3py'
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
@@ -209,7 +209,7 @@ html_static_path = ['_static']
 #html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'das2pydoc'
+htmlhelp_basename = 'das3pydoc'
 
 # TODO: Make logo-image.html use the variable html_logo for the logo
 #       to include.  -cwp 2019-01-25
@@ -240,7 +240,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-  ('index', 'das2py.tex', 'das2py Documentation',
+  ('index', 'das3py.tex', 'das3py Documentation',
    'Chris Piker', 'manual'),
 ]
 
@@ -270,7 +270,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'das2py', 'das2py Documentation',
+    ('index', 'das3py', 'das3py Documentation',
      ['Chris Piker'], 1)
 ]
 
@@ -284,8 +284,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-  ('index', 'das2py', 'das2py Documentation',
-   'Chris Piker', 'das2py', 'das2 client library for C-Python',
+  ('index', 'das3py', 'das3py Documentation',
+   'Chris Piker', 'das3py', 'das2 client library for C-Python',
    'Scientific'),
 ]
 

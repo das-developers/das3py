@@ -1,4 +1,4 @@
-# das2py example 01:  Data queries using catalog Source nodes
+# das3 example 01:  Data queries using catalog Source nodes
 #
 # The lowest level nodes in a das2 catalog are usually Source nodes which
 # describe where and how to get data.  Without source nodes the catalog
@@ -7,7 +7,7 @@
 # and HAPI servers.  A future Source derived class will provide access to
 # static file collections.
 #
-# There are currently three types of data querys supported by das2py and the
+# There are currently three types of data querys supported by das3py and the
 # das2 catalog system, each of which is useful for a different purpose.
 #
 #  0.  Get example data using Source.example()

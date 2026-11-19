@@ -1,4 +1,5 @@
-|Sx||904|
+|Sx||912|
+<stream type="das-basic-stream" version="3.0">
 <!-- This is an example of embedding extension objects within a das stream.
   In this case it's an Autoplot annotation used as an example.  This should
   not be taken to mean that Autoplot can read annotations from as stream, just
@@ -17,7 +18,7 @@
   See example ex15_ragged_waveform.d3t for an example of writing a variable
   number of items.
 -->
-<stream type="das-basic-stream" version="3.0" />
+</stream>
 |Hx|1|616|
 <dataset name="Annotations" rank="1" index="*" plot="cartesian2d">
   <coord physDim="time" axis="x">

@@ -1,4 +1,4 @@
-# das2 module example 7:
+# das3 module example 7:
 #    Processing Juno Waves downmixed dual sideband waveforms from CODMAC
 #    Level 2  data into CDFs
 

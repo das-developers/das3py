@@ -2,7 +2,7 @@
 
 # The MIT License
 #
-# Copyright 2019 Chris Piker
+# Copyright 2019-2026 Chris Piker
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -732,8 +732,17 @@ class DasTime(object):
 			nDoy -= nDaysInYear
 						
 		return "%04d-%03dT%s"%(nYear, nDoy, sTime)
-	
-	
+
+	def round_doy(self, nWhich):
+		"""Deprecated spelling of roundDoy(), the 2.3 name.  Removal planned
+		for 3.1."""
+		warnings.warn(
+			"DasTime.round_doy() is deprecated, use DasTime.roundDoy()",
+			PendingDeprecationWarning, stacklevel=2
+		)
+		return self.roundDoy(nWhich)
+
+
 	def isLeapYear(self):
 		"""Returns true if the year field indicates a leap year on the 
 		gregorian calendar, otherwise return false.

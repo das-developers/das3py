@@ -2,7 +2,7 @@
 
 # The MIT License
 #
-# Copyright 2019 Chris Piker
+# Copyright 2019-2026 Chris Piker
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@ the streams they emit.
 """
 import sys
 import json
+import warnings
 import _das3
 from . dastime import DasTime
 from . node import Node
@@ -86,6 +87,23 @@ class Source(Node):
 
 	def infoProto(self):
 		raise NotImplementedError("Derived class needs to implement infoProto()")
+
+	# The 2.3 names, which das2py 2.3's examples called.  Removal planned for 3.1.
+	def protoGet(self, dConfig, verbose=False):
+		"""Deprecated spelling of getProto()"""
+		warnings.warn(
+			"Source.protoGet() is deprecated, use Source.getProto()",
+			PendingDeprecationWarning, stacklevel=2
+		)
+		return self.getProto(dConfig, verbose)
+
+	def protoInfo(self):
+		"""Deprecated spelling of infoProto()"""
+		warnings.warn(
+			"Source.protoInfo() is deprecated, use Source.infoProto()",
+			PendingDeprecationWarning, stacklevel=2
+		)
+		return self.infoProto()
 
 	def get(self, where=None, verbose=False):
 		"""Get data from a Source.

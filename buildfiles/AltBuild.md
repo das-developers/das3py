@@ -1,4 +1,4 @@
-# Alternate build instructions for das2py
+# Alternate build instructions for das3py
 
 In various incarnations this module has been run on Windows, Linux & MacOS
 over the last decade and it still continues to support python2 for older
@@ -17,7 +17,7 @@ rem clone repos
 
 git clone git@github.com:microsoft/vcpkg.git
 git clone git@github.com:das-developers/das2C.git
-git clone git@github.com:das-developers/das2py.git
+git clone git@github.com:das-developers/das3py.git
 
 rem Initialize visual studio tools
 vcvarsall.bat x64
@@ -39,8 +39,8 @@ nmake.exe /nologo /f buildfiles\Windows.mak build
 nmake.exe /nologo /f buildfiles\Windows.mak run_test
 cd ..\
 
-rem build das2py (reuses VCPKG_ROOT setting from above)
-cd das2py
+rem build das3py (reuses VCPKG_ROOT setting from above)
+cd das3py
 git checkout tags/v3.0-pre1  # Or stay on main if testing
 python -m pip install numpy
 python -m pip install wheel
@@ -51,18 +51,31 @@ set DAS2C_INCDIR=..\das2C
 python -m build -w
 cd ..\
 
-rem test das2py
+rem test das3py
 python -m pip install matplotlib
-python -m pip install .\das2py\dist\das2py-2.3.0-cp310-cp310-win_amd64.whl
+python -m pip install .\das3py\dist\das3py-2.3.0-cp310-cp310-win_amd64.whl
 
-python das2py\examples\ex09_cassini_fce_ephem_ticks.py 2017-09-14
+python das3py\examples\ex09_cassini_fce_ephem_ticks.py 2017-09-14
 rem OTHER TESTS HERE
 
 rem upload to pypi
-cd das2py
+cd das3py
 python -m twine upload dist/*
 username: __token__
 password: (the 170+ character token value that you saved somewhere)
+```
+
+### The das2py transitional package
+
+`make build` also writes the pure python das2py wheel, which holds only
+the `import das2` alias and requires das3py, into `dist_compat/`.  It is
+kept out of `dist/` on purpose, so the upload above publishes das3py alone.
+One `py2.py3-none-any` wheel serves every platform, so it is uploaded once,
+and only after the matching das3py is live on PyPI:
+
+```bash
+python -m build -o dist_compat compat/das2py   # if not built by make
+python -m twine upload dist_compat/*
 ```
 
 ## Linux RPMs (outdated)

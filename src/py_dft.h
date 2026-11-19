@@ -1,18 +1,19 @@
-/* Copyright (C) 2015-2017 Edward West
+/* Copyright (C) 2026 Chris Piker
+ * Copyright (C) 2015-2017 Edward West
  *
- * This file is part of das2py, the Core Das2 C Library.
+ * This file is part of das3py, the Core Das2 C Library.
  * 
- * Das2py is free software; you can redistribute it and/or modify it under
+ * Das3py is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License version 2.1 as published
  * by the Free Software Foundation.
  *
- * Das2py is distributed in the hope that it will be useful, but WITHOUT ANY
+ * Das3py is distributed in the hope that it will be useful, but WITHOUT ANY
  * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  * FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for
  * more details.
  *
  * You should have received a copy of the GNU Lesser General Public License
- * version 2.1 along with Das2py; if not, see <http://www.gnu.org/licenses/>. 
+ * version 2.1 along with Das3py; if not, see <http://www.gnu.org/licenses/>. 
  */
 
 /* Will be included directly as a *.c file, no need to declare as posix source
@@ -48,13 +49,13 @@
 /* instance structure */
 typedef struct {
 	PyObject_HEAD
-	DftPlan* dftplan;
-	Das2Dft* das2dft;
+	DasDftPlan* dftplan;
+	DasDft* das2dft;
 } pyd2_Dft;
 
 static void pyd2_Dft_dealloc(pyd2_Dft* self) {
 	if (self->das2dft)
-		del_Dft(self->das2dft);
+		del_DasDft(self->das2dft);
 	Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -79,29 +80,33 @@ static int pyd2_Dft_init(pyd2_Dft* self, PyObject *args, PyObject *kwds) {
 	unsigned int uLen = 0;
 	PyObject* pForward = NULL;
 	bool bForward = true;
-	das_error_msg* errMsg;
 
 	static char *kwlist[] = {"uLen", "sWindow", "bForward", NULL};
 
-	if (! PyArg_ParseTupleAndKeywords(args, kwds, "Izo", kwlist,
-		&uLen, &sWindow))
+	/* Was "Izo" with no target for bForward: 'o' is not a format code, and
+	   pForward stayed NULL into PyObject_IsTrue() */
+	if (! PyArg_ParseTupleAndKeywords(args, kwds, "Iz|O", kwlist,
+		&uLen, &sWindow, &pForward))
 	{
 		return -1;
 	}		
 	
 	if ( self->das2dft != NULL ) {
-		del_Dft(self->das2dft);
-		del_DftPlan(self->dftplan);
+		del_DasDft(self->das2dft);
+		del_DasDftPlan(self->dftplan);
 		self->das2dft = NULL;
 		self->dftplan = NULL;
 	}
-	bForward = PyObject_IsTrue(pForward);
-	self->dftplan = new_DftPlan(uLen, bForward);
-	self->das2dft = new_Dft(self->dftplan, sWindow);
+	if(pForward != NULL) bForward = PyObject_IsTrue(pForward);
+	self->dftplan = new_DasDftPlan(uLen, bForward);
+	if(self->dftplan == NULL){
+		pyd2_setErrText(PyExc_ValueError, DAS_OKAY);
+		return -1;
+	}
+	self->das2dft = new_DasDft(self->dftplan, sWindow);
 
 	if ( self->das2dft == NULL ) {
-		errMsg = das_get_error();
-		PyErr_SetString(PyExc_ValueError, errMsg->message);
+		pyd2_setErrText(PyExc_ValueError, DAS_OKAY);
 		return -1;
 	}
 
@@ -130,9 +135,7 @@ static PyObject* pyd2_Dft_calculate(pyd2_Dft* self, PyObject* args) {
 	double* dReal;
 	double* dImg;
 	size_t uLen;
-	DasErrCode err;
-	das_error_msg* errMsg;
-	char* tmp;
+	das_errcode err;
 	
 
 	if (!PyArg_ParseTuple(args, "O|O:calculate", &pReal, &pImg)) {
@@ -199,16 +202,9 @@ static PyObject* pyd2_Dft_calculate(pyd2_Dft* self, PyObject* args) {
 		dImg = (double*)PyArray_DATA(pAryImg);
 	}
 
-	err = Dft_calculate(self->das2dft,dReal,dImg);
+	err = DasDft_calculate(self->das2dft,dReal,dImg);
 	if ( err != DAS_OKAY ) {
-		errMsg = das_get_error();
-		if (err == errMsg->nErr) {
-			tmp = errMsg->message;
-		}
-		else {
-			tmp = "Unknown error";
-		}
-		PyErr_SetString(PyExc_ValueError, tmp);
+		pyd2_setErrText(PyExc_ValueError, err);
 	}
 
 	Py_DECREF(pObjReal);
@@ -226,7 +222,7 @@ static PyObject* pyd2_Dft_getReal(pyd2_Dft* self, PyObject* noargs) {
 	const double* pReal;
 	npy_intp dims;
 
-	pReal = Dft_getReal(self->das2dft,&pLen);
+	pReal = DasDft_real(self->das2dft,&pLen);
 
 	dims = pLen;
 	pObjReal = PyArray_SimpleNew(1,&dims,NPY_DOUBLE);
@@ -256,7 +252,7 @@ static PyObject* pyd2_Dft_getImg(pyd2_Dft* self, PyObject* noargs) {
 	const double *img;
 	npy_intp dims;
 
-	img = Dft_getImg(self->das2dft,&pLen);
+	img = DasDft_imag(self->das2dft,&pLen);
 
 	dims = pLen;
 	pObjImg = PyArray_SimpleNew(1,&dims,NPY_DOUBLE);
@@ -290,7 +286,7 @@ static PyObject* pyd2_Dft_getMagnitude(pyd2_Dft* self, PyObject* noargs) {
 	const double *magn;
 	npy_intp dims;
 	
-	magn = Dft_getMagnitude(self->das2dft,&pLen);
+	magn = DasDft_amplitude(self->das2dft,&pLen);
 
 	dims = pLen;
 	pObjMagn = (PyObject*)PyArray_SimpleNew(1,&dims,NPY_DOUBLE);
@@ -312,7 +308,7 @@ const char das2help_Dft_getLength[] =
 	"calculate function.\n";
 
 static PyObject* pyd2_Dft_getLength(pyd2_Dft* self, PyObject* noargs) {
-	return Py_BuildValue("I",self->das2dft->uLen);
+	return Py_BuildValue("I",(unsigned int)DasDft_length(self->das2dft));
 }
 
 static PyMethodDef pyd2_Dft_methods[] = {
@@ -383,14 +379,14 @@ static PyTypeObject pyd2_DftType = {
 /* instance structure */
 typedef struct {
 	PyObject_HEAD
-	Das2Psd* das2psd;
-	DftPlan* dftplan;
+	DasPsd* das2psd;
+	DasDftPlan* dftplan;
 } pyd2_Psd;
 
 static void pyd2_Psd_dealloc(pyd2_Psd* self) {
 	if (self->das2psd){
-		del_Das2Psd(self->das2psd);
-		del_DftPlan(self->dftplan);
+		del_DasPsd(self->das2psd);
+		del_DasDftPlan(self->dftplan);
 		self->das2psd = NULL;
 		self->dftplan = NULL;
 	}
@@ -418,7 +414,6 @@ static int pyd2_Psd_init(pyd2_Psd* self, PyObject *args, PyObject *kwds) {
 	char *sWindow = NULL;
 	bool bCenter = false;
 	unsigned int uLen = 0;
-	das_error_msg* errMsg;
 
 	static char *kwlist[] = {"uLen", "bCenter", "sWindow", NULL};
 
@@ -432,18 +427,17 @@ static int pyd2_Psd_init(pyd2_Psd* self, PyObject *args, PyObject *kwds) {
 	else bCenter = false;
 	
 	if ( self->das2psd != NULL ) {
-		del_Das2Psd(self->das2psd);
-		del_DftPlan(self->dftplan);
+		del_DasPsd(self->das2psd);
+		del_DasDftPlan(self->dftplan);
 		self->das2psd = NULL;
 		self->dftplan = NULL;
 	}
 
-	self->dftplan = new_DftPlan(uLen, true);
-	self->das2psd = new_Psd(self->dftplan, bCenter, sWindow);
+	self->dftplan = new_DasDftPlan(uLen, true);
+	self->das2psd = new_DasPsd(self->dftplan, bCenter, sWindow);
 
 	if (( self->das2psd == NULL)||(self->dftplan == NULL)) {
-		errMsg = das_get_error();
-		PyErr_SetString(PyExc_ValueError, errMsg->message);
+		pyd2_setErrText(PyExc_ValueError, DAS_OKAY);
 		return -1;
 	}
 
@@ -469,9 +463,7 @@ static PyObject* pyd2_Psd_calculate(pyd2_Psd* self, PyObject* args) {
 	double* dReal;
 	double* dImg;
 	size_t uLen;
-	DasErrCode err;
-	das_error_msg* errMsg;
-	char* tmp;
+	das_errcode err;
 
 	if (!PyArg_ParseTuple(args, "O|O:calculate", &pReal, &pImg)) {
 		return NULL;
@@ -523,16 +515,9 @@ static PyObject* pyd2_Psd_calculate(pyd2_Psd* self, PyObject* args) {
 		dImg = (double*)PyArray_DATA((PyArrayObject*)pObjImg);
 	}
 
-	err = Psd_calculate(self->das2psd,dReal,dImg);
+	err = DasPsd_calculate(self->das2psd,dReal,dImg);
 	if ( err != DAS_OKAY ) {
-		errMsg = das_get_error();
-		if (err == errMsg->nErr) {
-			tmp = errMsg->message;
-		}
-		else {
-			tmp = "Unknown error";
-		}
-		PyErr_SetString(PyExc_ValueError, tmp);
+		pyd2_setErrText(PyExc_ValueError, err);
 	}
 
 	Py_DECREF(pObjReal);
@@ -592,19 +577,19 @@ static PyObject* pyd2_Psd_powerRatio(const pyd2_Psd* self, PyObject* args, PyObj
 	}
 
 	if (PyObject_IsTrue(input) && PyObject_IsTrue(output)) {
-		powerRatio=Psd_powerRatio(self->das2psd, &inputPower, &outputPower);
+		powerRatio=DasPsd_powerRatio(self->das2psd, &inputPower, &outputPower);
 		return Py_BuildValue("ddd", inputPower, outputPower, powerRatio);
 	}
 	else if (PyObject_IsTrue(input)) {
-		powerRatio=Psd_powerRatio(self->das2psd, &inputPower, NULL);
+		powerRatio=DasPsd_powerRatio(self->das2psd, &inputPower, NULL);
 		return Py_BuildValue("dd", inputPower, powerRatio);
 	}
 	else if (PyObject_IsTrue(output)) {
-		powerRatio=Psd_powerRatio(self->das2psd, NULL, &outputPower);
+		powerRatio=DasPsd_powerRatio(self->das2psd, NULL, &outputPower);
 		return Py_BuildValue("dd", outputPower, powerRatio);
 	}
 	else {
-		powerRatio=Psd_powerRatio(self->das2psd, NULL, NULL);
+		powerRatio=DasPsd_powerRatio(self->das2psd, NULL, NULL);
 		return Py_BuildValue("d", powerRatio);
 	}
 }
@@ -628,7 +613,7 @@ static PyObject* pyd2_Psd_get(const pyd2_Psd* self, PyObject* noargs) {
 	const double* psd;
 	npy_intp dims;
 
-	psd = Psd_get(self->das2psd, &pLen);
+	psd = DasPsd_power(self->das2psd, &pLen);
 
 	dims = pLen;
 	arrPsd = (PyObject*)PyArray_SimpleNew(1,&dims,NPY_DOUBLE);

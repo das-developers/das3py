@@ -7,8 +7,10 @@
 #  DAS_INCDIR
 #  DAS_LIBDIR
 
-# Find a way to get this from the manifest
-DAS_PY_VER:=3.0rc7
+# Find a way to get this from the manifest.  Until then the version is
+# also in pyproject.toml, setup.py (python 2 builds), das3/__init__.py and
+# compat/das2py/setup.cfg; keep all five in step.
+DAS_PY_VER:=3.0.5rc1
 
 ifeq ($(PY_BIN),)
 PY_BIN=$(shell which python)
@@ -60,7 +62,14 @@ PY_MAJ_VER_TOK:=$(shell $(PY_BIN) -c "import sys; print(sys.version_info[0])")
 # build (most distro pythons), which sys.maxunicode reveals.
 PY_ABI_TOK:=$(shell $(PY_BIN) -c "import sys; f=getattr(sys,'abiflags',None); print(f if f is not None else 'm'+('u' if sys.maxunicode>65535 else ''))")
 
-WHEEL_FILE:=das2py-$(DAS_PY_VER)-cp$(PY_VER_TOK)-cp$(PY_VER_TOK)$(PY_ABI_TOK)-linux_x86_64.whl
+WHEEL_FILE:=das3py-$(DAS_PY_VER)-cp$(PY_VER_TOK)-cp$(PY_VER_TOK)$(PY_ABI_TOK)-linux_x86_64.whl
+
+# The transitional das2py distribution: just the 'import das2' alias plus a
+# dependency on das3py.  Pure python, one wheel for both interpreters.  It
+# builds into its own directory so that 'twine upload dist/*' publishes
+# das3py alone; das2py must not reach PyPI before the das3py it requires.
+COMPAT_DIST:=dist_compat
+COMPAT_WHEEL:=das2py-$(DAS_PY_VER)-py2.py3-none-any.whl
 
 # One pair of venvs per interpreter (build_py312_venv, test_py27_venv, ...),
 # not per major version.  A home directory shared between machines with
@@ -91,6 +100,7 @@ src/py_dft.h \
 das3/__init__.py \
 das3/auth.py \
 das3/cdf.py \
+das3/cdfinfo.py \
 das3/cli.py \
 das3/container.py \
 das3/das-basic-doc-ns-v3.0.xsd \
@@ -110,32 +120,47 @@ das3/util.py \
 das3/verify.py \
 das3/pycdf/__init__.py \
 das3/pycdf/const.py \
-das3/pycdf/LICENSE.md \
-das2/__init__.py
+das3/pycdf/LICENSE.md
 
-.PHONY: build dist test install clean distclean examples
+COMPAT_SRC:= \
+compat/das2py/pyproject.toml \
+compat/das2py/setup.cfg \
+compat/das2py/README.md \
+compat/das2py/das2/__init__.py
 
-build:dist/$(WHEEL_FILE)
+.PHONY: build dist test install install-compat clean distclean examples
+
+build:dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
 
 # The static das2C library is linked into the extension, so a das2C rebuild
 # must trigger a wheel rebuild too, or you test against the previous library.
 # Likewise for the libcdf.so das2C copies up, it's packaged for pycdf.
-# The sdist step leaves das2py.egg-info in the source tree.  An old pip
+# The sdist step leaves das3py.egg-info in the source tree.  An old pip
 # (9.x, as on python 3.6 hosts) runs with the current directory on sys.path,
-# sees that egg-info, decides das2py is already installed here, and skips the
+# sees that egg-info, decides das3py is already installed here, and skips the
 # wheel; the test venv then has numpy but no das3.  Remove it right away.
 dist/$(WHEEL_FILE):$(SRC) $(DAS_LIBDIR)/libdas3.a $(DAS_LIBDIR)/libcdf.so build_$(VDIR)/bin/python
 	DAS_INCDIR=$(DAS_INCDIR) DAS_LIBDIR=$(DAS_LIBDIR) build_$(VDIR)/bin/python -m build
 	-rm -r *.egg-info
 
+# Same egg-info hazard as above, one directory down
+$(COMPAT_DIST)/$(COMPAT_WHEEL):$(COMPAT_SRC) build_$(VDIR)/bin/python
+	build_$(VDIR)/bin/python -m build -o $(COMPAT_DIST) compat/das2py
+	-rm -r compat/das2py/*.egg-info
+
 build_$(VDIR)/bin/python:
 	$(PY_BIN) -m $(VENV_MOD) build_$(VDIR)
 	build_$(VDIR)/bin/python -m pip install $(PY_VER_WARN) build
 
-test:dist/$(WHEEL_FILE)
+# Both wheels go in together so pip satisfies das2py's das3py requirement
+# from the local build, not from PyPI.
+test:dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
 	# Creating temporary environment for testing
 	$(PY_BIN) -m $(VENV_MOD) test_$(VDIR)
-	./test_$(VDIR)/bin/python -m pip install --isolated $(PY_VER_WARN) dist/$(WHEEL_FILE)
+	# A reused venv may hold a das2py from before the split that owns das3/
+	# itself, upgrading that after das3py goes in would delete das3py's files
+	./test_$(VDIR)/bin/python -m pip uninstall -y --isolated $(PY_VER_WARN) das2py das3py
+	./test_$(VDIR)/bin/python -m pip install --isolated $(PY_VER_WARN) dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
 	@./test_$(VDIR)/bin/python -c 'import numpy;print("===================================");print("  Numpy Runtime Version is %s"%numpy.__version__);		print("===================================")'
 	./test_$(VDIR)/bin/python test/CheckPortable.py
 	./test_$(VDIR)/bin/python test/TestCatalog.py
@@ -153,8 +178,8 @@ test:dist/$(WHEEL_FILE)
 	./test_$(VDIR)/bin/das_verify test/ex43_msc_complex_cal.d3b
 	./test_$(VDIR)/bin/das_verify test/ex16_mag_grid_doc.d3x
 	./test_$(VDIR)/bin/das_verify test/ex20_tracers_aci.d3t
-	./test_$(VDIR)/bin/das_cdf_info -h 
-	./test_$(VDIR)/bin/das_cdf_info test/vg1_pws_wf_2023-10-24T03_v1.0.cdf
+	./test_$(VDIR)/bin/das_cdfinfo -h 
+	./test_$(VDIR)/bin/das_cdfinfo test/vg1_pws_wf_2023-10-24T03_v1.0.cdf
 	@echo "All tests ran without returning an error code"
 
 # Every example writes a PNG and none opens a window, so the file backend is
@@ -162,14 +187,17 @@ test:dist/$(WHEEL_FILE)
 # without Tk.  matplotlib honors this variable since 1.5.
 examples: export MPLBACKEND = Agg
 
+# test/ex08_dynaspec_namespace.d3t is aspirational and left out on purpose: it
+# is the only namespaced stream, and its width list is 6 short of index="-;152".
 examples:
 	# Creating temporary environment for testing, verify more streams, re-gen all example plots
 	$(PY_BIN) -m $(VENV_MOD) test_$(VDIR)
+	./test_$(VDIR)/bin/python -m pip uninstall -y --isolated $(PY_VER_WARN) das2py das3py
 	./test_$(VDIR)/bin/python -m pip install --isolated $(PY_VER_WARN) dist/$(WHEEL_FILE)
 	./test_$(VDIR)/bin/python -m pip install --isolated $(PY_VER_WARN)  matplotlib
 	@./test_$(VDIR)/bin/python -c 'import numpy;print("===================================");print("  Numpy Runtime Version is %s"%numpy.__version__);		print("===================================")'
-	./test_$(VDIR)/bin/das_verify test/ex06_waveform_binary.d3b
-	./test_$(VDIR)/bin/das_verify test/ex08_dynaspec_namespace.d3t
+	./test_$(VDIR)/bin/das_verify test/ex18_juno_waves_wfrm.d3b
+	./test_$(VDIR)/bin/das_verify test/ex03_galileo_pws_lrs.d2t
 	./test_$(VDIR)/bin/das_verify test/ex12_sounder_xyz.d3t
 	./test_$(VDIR)/bin/das_verify test/ex13_object_annotation.d3t
 	./test_$(VDIR)/bin/das_verify test/ex14_object_tfcat.d3t
@@ -195,13 +223,19 @@ examples:
 	@echo "All examples ran without returning an error code"
 
 
+# Installs das3py only.  The das2 alias is opt-in, as it is for pip users:
+# make install-compat.  Removing an old das2py first matters, since 2.x and
+# 3.0.4 own a das2 directory and a das_verify script.
 install:
-	$(PY_BIN) -m pip uninstall -y --isolated --no-python-version-warning das2py
+	$(PY_BIN) -m pip uninstall -y --isolated --no-python-version-warning das2py das3py
 	$(PY_BIN) -m pip install --isolated --no-python-version-warning ./dist/$(WHEEL_FILE)
 
+install-compat:
+	$(PY_BIN) -m pip install --isolated --no-python-version-warning ./dist/$(WHEEL_FILE) ./$(COMPAT_DIST)/$(COMPAT_WHEEL)
+
 clean:
-	-rm -r dist test_*_venv *.egg-info
+	-rm -r dist $(COMPAT_DIST) test_*_venv *.egg-info
 
 distclean:
-	-rm -r dist test_*_venv build_*_venv *.egg-info
+	-rm -r dist $(COMPAT_DIST) test_*_venv build_*_venv *.egg-info
 

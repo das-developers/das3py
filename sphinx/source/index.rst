@@ -1,4 +1,4 @@
-das2py: The python das2 client package
+das3py: The python das2 client package
 ======================================
 
 
@@ -26,10 +26,10 @@ still works as an alias.  Functionality provided in this package:
 
 	#. Assists with generating matplotlib_ plots.
 
-Das2py does not provide any builtin plotting capabilities.  Instead that task
+Das3py does not provide any builtin plotting capabilities.  Instead that task
 is left to the quite capable matplotlib_ package, or any other plotting
 software that can read numpy arrays.  The plot below was generated from
-Cassini_ RPWS_ Multimode Electric Survey spectra using das2py to gather the
+Cassini_ RPWS_ Multimode Electric Survey spectra using das3py to gather the
 data and matplotlib_ to render the image.
 
 .. figure:: _static/cas_rpws.png
@@ -68,7 +68,7 @@ malfunction.
 
 The lowest level nodes in the catalog define data source interfaces. In
 the diagram above the data source nodes have been left out as these are used
-by the das2py Collection object behind the scenes, though it is possible to use
+by the das3py Collection object behind the scenes, though it is possible to use
 them directly.  Typically the actual data values are provided as das2 streams
 served from a das2 server, though work is underway to support more stream
 formats as well as static CDF_ files.
@@ -76,7 +76,7 @@ formats as well as static CDF_ files.
 
 Data Source Definitions
 -----------------------
-Most das2py source code examples start by providing a dota collection ID to
+Most das3py source code examples start by providing a dota collection ID to
 the ``das3.get_source()`` function.  This defines the source inside a local
 python object which can then be queried for data.  In the code snippet below
 the data source collection for the Electric field Survey data from the Plasma
@@ -85,7 +85,7 @@ Wave Instrument that was onboard the Galileo_ spacecraft is aquired::
 	import das3
 	meta_src = das3.get_source('site:/uiowa/galileo/pws/survey_electic')
 
-When ``get_source()`` is called das2py will access the global catalog and
+When ``get_source()`` is called das3py will access the global catalog and
 walk it's nodes until finding the node at the virtual path:
 ``tag:das2.org,2012:site:/uiowa/galileo/pws/survey_electic`` as illustrated
 below.
@@ -97,7 +97,7 @@ below.
 	Walking the catalog tree to retrieve a data source collection node
 
 Navigation of the federated catalog is handled by a single call.  If a branch
-of the catalog happens to be off line, das2py will automatically back up and
+of the catalog happens to be off line, das3py will automatically back up and
 try an alternate branch.  This behavior is true all we way up to the root node,
 which is duplicated off site for reliability.
 
@@ -122,7 +122,7 @@ Caveat
 ======
 All das2 stream values denoting a time interval (ex: seconds, minutes,
 years, etc) are stored as NumPy timedelta64['ns'] objects.  Thus the largest
-time difference that can be understood by das2py is about 292 years.  Any
+time difference that can be understood by das3py is about 292 years.  Any
 values outside this range are converted to fill.  This limitation can be 
 removed in the future if needed by auto selecting NumPy time units based on
 the data range and precision.

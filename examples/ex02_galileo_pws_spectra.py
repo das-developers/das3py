@@ -1,4 +1,4 @@
-# das2 module example 2:
+# das3 module example 2:
 #    Plotting simple cubic Galileo PWS spectra
 
 import das3
@@ -14,7 +14,7 @@ import matplotlib.dates  as dates
 # should not change due to server outages or dataset migration so long as the
 # catalog is updated.  Each ID can map to mutiple URLs for automatic failover.
 # In reality a valid URI is transmitted on the wire, not just the ID below.
-# Das2py knows to prepend 'tag:das2.org:2012:' automatically when looking for
+# Das3py knows to prepend 'tag:das2.org:2012:' automatically when looking for
 # data sources if this prefix is not present.
 
 sId = "site:/uiowa/galileo/pws/survey_electric/das2"
@@ -41,7 +41,7 @@ time = ds['time']         # These represent real-world physical dimesions.
 freq = ds['frequency']    # Dimensions have 1 or more variables (below)
 specDens = ds['electric'] # that provide data values.
 
-# das2py Variables provide ndarray views for accessing data.  Every Variable
+# das3py Variables provide ndarray views for accessing data.  Every Variable
 # in the Dataset has the same bulk iteration properites.  They have the same
 # index ranges for the same index dimensions... always.  Said another way,
 # Datasets consist of Variables correlated in index space.  So:

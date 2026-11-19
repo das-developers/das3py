@@ -6,9 +6,15 @@ submodules such as das2.dastime and das2.pycdf.const, resolves to the very
 same module object as its das3 counterpart, so there is never a second copy
 of a class to trip an isinstance() check.
 
-The pip distribution is still das2py.  A PendingDeprecationWarning is issued
-once per process.  Python hides that category everywhere by default, so old
-scripts run without a word on either interpreter; to find them, run with
+This module is the whole of the das2py distribution, which from 3.0.5 on is
+a transitional package that depends on das3py.  das3py itself never ships
+a das2 directory: two distributions owning the same files would let
+uninstalling either one break the other, and pip has no way to declare the
+conflict.
+
+A PendingDeprecationWarning is issued once per process.  Python hides that
+category everywhere by default, so old scripts run without a word on either
+interpreter; to find them, run with
 
     python -W error::PendingDeprecationWarning old_script.py
 """
@@ -73,7 +79,7 @@ if not any(isinstance(f, _Alias) for f in sys.meta_path):
 	sys.meta_path.insert(0, _Alias())
 
 warnings.warn(
-	"'import das2' is deprecated; the package is 'das3' (pip: das2py)",
+	"'import das2' is deprecated; the package is 'das3' (pip: das3py)",
 	PendingDeprecationWarning, stacklevel=2
 )
 

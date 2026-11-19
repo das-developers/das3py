@@ -1,4 +1,4 @@
-# das2 module example 4
+# das3 module example 4
 #   Reading Voyager PWS 16-channel data and plotting peaks and averages
 #   based on command line time ranges
 import sys

@@ -417,9 +417,7 @@
      variable's `index` (full-rank, one slot per DATASET index).  A slope sits at
      each dependent index and a '-' marks each degenerate one; e.g. index="-;16;128"
      pairs with interval="-;16;0.125".  A compact form (one slope per dependent index,
-     no '-') is also accepted on input during the transition to full-rank.  The
-     '-'-vs-index alignment is a cross-attribute rule enforced in dataset_hdr3.c,
-     beyond what XSD can express. -->
+     no '-') is also accepted on input during the transition to full-rank. -->
 <xs:simpleType name="SlopeList">
   <xs:restriction base="xs:string">
     <xs:pattern value="(-|[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?)(;(-|[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?))*" />
@@ -791,9 +789,9 @@
 
   <xs:attribute name="rank"  type="DatasetRank" use="required" />
   <xs:attribute name="name"  type="DatasetName" use="required"/>
-  <!-- name: identifies the dataset within its group.  No two datasets in a
-       stream share both group and name, over the life of the stream, even
-       across packet ID redefinitions.
+  <!-- name: identifies the dataset within its group.  The pair (group, name)
+       should be unique in a stream, over the life of the stream.  This is a
+       recommendation to stream writers, readers are not promised it.
 
        group: display-join intent.  Datasets sharing a group token belong on
        one plot even when their shapes differ (the das2 survey-band join).

@@ -1,4 +1,5 @@
 |Sx||1187|
+<stream type="das-basic-stream" version="3.0">
 <!-- 
 This is an example of sending exension objects in a das stream.  In this case
 we are sending Time-Frequency radio observation features (TFCat objects) to a
@@ -22,7 +23,6 @@ This example illustrates the following das-basic-stream features:
 Standard das clients are NOT expected to be able to understand any particular 
 extended data object.  It is sufficent to merely parse past them.
 -->
-<stream type="das-basic-stream" version="3.0">
   <properties>
     <p name="title">Cassini RPWS Survey</p>
   </properties>

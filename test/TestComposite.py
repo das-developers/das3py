@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Composite values through both das2py read layers.
+"""Composite values through both das3py read layers.
 
 Each das3 fixture below was written by das2C for one formalism.  The low
 level read must carry the <ops> element, the internal shape, the component
@@ -94,9 +94,29 @@ LOW_LEVEL = {
 }
 
 
+# Variable.storage(): the stored values without the broadcast.  A degenerate
+# dataset index must have stride 0 in .array, which is what lets storage()
+# promise that broadcasting costs no memory.
+STORAGE = {
+	'test/ex20_tracers_aci.d3t': {
+		('energy',   'center'):    (47,),
+		('anode',    'center'):    (16, 1),
+		('time',     'offset'):    (47,),
+		('time',     'reference'): (4,),
+		('location', 'center'):    (4, 3),
+		('flux',     'center'):    (4, 47, 16),
+	},
+	'test/ex22_mag_grid_vec.d3t': {
+		('time',       'center'): (5,),
+		('space',      'center'): (2, 2, 2),
+		('calibrated', 'center'): (5, 2, 2, 3),
+	},
+}
+
+
 # Same values twice: variable width utf8 text and fixed width binary.  The
 # two forms take different codec paths in das2C and different packet sizing
-# in das2py's reader.  The text forms print four significant figures, the
+# in das3py's reader.  The text forms print four significant figures, the
 # binary forms carry full doubles, so agreement is to the text's precision
 # and not to float rounding; a stepping error in the fixed width run is
 # orders of magnitude larger than that.
@@ -121,6 +141,8 @@ def checkHigh(fails, sFile, tDsShape, dVars):
 	ds = lDs[0]
 	fails.check(tuple(ds.shape) == tDsShape,
 		"%s: dataset shape %s, expected %s"%(sFile, tuple(ds.shape), tDsShape))
+	fails.check(ds.rank == len(tDsShape),
+		"%s: dataset rank %d, expected %d"%(sFile, ds.rank, len(tDsShape)))
 
 	for (sDim, sRole), (tShape, lIntern, lLabels, dOps) in dVars.items():
 		sWho = "%s %s:%s"%(sFile, sDim, sRole)
@@ -135,8 +157,10 @@ def checkHigh(fails, sFile, tDsShape, dVars):
 			"%s array shape %s, expected %s"%(sWho, var.array.shape, tShape))
 		fails.check(var.intrShape() == tuple(lIntern),
 			"%s intrShape %s, expected %s"%(sWho, var.intrShape(), tuple(lIntern)))
-		fails.check(var.subrank == len(lIntern),
-			"%s subrank %d, expected %d"%(sWho, var.subrank, len(lIntern)))
+		fails.check(var.intrRank == len(lIntern),
+			"%s intrRank %d, expected %d"%(sWho, var.intrRank, len(lIntern)))
+		fails.check(var.extRank == len(tDsShape),
+			"%s extRank %d, expected %d"%(sWho, var.extRank, len(tDsShape)))
 		fails.check(var.extShape() == tDsShape,
 			"%s external shape %s, expected %s"%(sWho, var.extShape(), tDsShape))
 		if lLabels is not None:
@@ -230,6 +254,24 @@ def checkPair(fails, sText, sBinary):
 					fails.check(bSame, "%s: %s:%s values differ"%(sWho, sDim, sRole))
 
 
+def checkStorage(fails, sFile, dShapes):
+	(dHdr, lDs) = das3.read_file(sFile)
+	ds = lDs[0]
+	for (sDim, sRole), tShape in dShapes.items():
+		sWho = "%s %s:%s"%(sFile, sDim, sRole)
+		var = ds[sDim][sRole]
+		aStore = var.storage()
+		fails.check(aStore.shape == tShape,
+			"%s storage() shape %s, expected %s"%(sWho, aStore.shape, tShape))
+		fails.check(numpy.may_share_memory(aStore, var.array),
+			"%s storage() is a copy, expected a view of .array"%sWho)
+		for i in range(var.extRank):
+			if not var.unique[i]:
+				fails.check(var.array.strides[i] == 0,
+					"%s degenerate index %d has stride %d, expected 0"%(
+					sWho, i, var.array.strides[i]))
+
+
 def main(argv):
 	fails = Failures()
 	for sFile in EXPECT:
@@ -248,6 +290,11 @@ def main(argv):
 			checkMapping(fails, sFile)
 		except Exception as e:
 			fails.check(False, "%s mapping: %s: %s"%(sFile, type(e).__name__, e))
+	for sFile in STORAGE:
+		try:
+			checkStorage(fails, sFile, STORAGE[sFile])
+		except Exception as e:
+			fails.check(False, "%s storage: %s: %s"%(sFile, type(e).__name__, e))
 	for (sText, sBinary) in PAIRS:
 		try:
 			checkPair(fails, sText, sBinary)

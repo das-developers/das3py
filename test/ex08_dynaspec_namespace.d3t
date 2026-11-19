@@ -1,4 +1,12 @@
 |Sx|0|1519|<?xml version="1.0" encoding="UTF-8" ?>
+<stream xmlns="das-basic-stream"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="
+    das-basic-stream
+    https://das2.org/schema/das-basic-stream-ns-v3.0.xsd
+  "
+  type="das-basic-stream" version="3.0"
+>
 <!-- 
    This example illustrates the use of explicit namespaces. Typically in das
    streams the XML prolog is left off and an explicit namespace isn't
@@ -9,14 +17,6 @@
    process them in a streaming manner; and most common XML libraries are DOM
    oriented.
 -->
-<stream xmlns="das-basic-stream"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="
-    das-basic-stream
-    https://das2.org/schema/das-basic-stream-ns-v3.0.xsd
-  "
-  type="das-basic-stream" version="3.0"
->
   <properties>
     <p name="title">Galileo PWS - LRS Electric</p>
     <p name="xTagWidth" type="real" units="s">80</p>

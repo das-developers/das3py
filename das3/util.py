@@ -1,6 +1,6 @@
 # The MIT License
 #
-# Copyright 2019 Chris Piker
+# Copyright 2019-2026 Chris Piker
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -33,12 +33,20 @@ __all__ = [
 
 
 class CatalogError(Exception):
-	"""Raised when there is a problem with a definition in a das2 catalog"""
-	def __init__(self, sUrl, sMsg):
+	"""Raised when there is a problem with a definition in a das catalog.
+
+	Takes the message alone, or the node URL and then the message.  Most
+	raise sites put the URL in the message text themselves.
+	"""
+	def __init__(self, sUrl, sMsg=None):
+		if sMsg is None:
+			(sUrl, sMsg) = (None, sUrl)
+		super(CatalogError, self).__init__(sMsg)
 		self.sUrl = sUrl
 		self.sMsg = sMsg
 
 	def __str__(self):
+		if self.sUrl is None: return self.sMsg
 		return "%s (from %s)"%(self.sMsg, self.sUrl)
 
 class SourceError(Exception):

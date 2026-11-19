@@ -12,10 +12,11 @@
     <p name="xCacheResInfo"> </p>
   </properties>
 </stream>
-|Hx|1|46927|
+|Hx|1|46966|
 <dataset rank="2" name="LFR" index="*;6144">
   <coord axis="x" physDim="time">
     <scalar use="reference" index="*;-" semantic="datetime" units="UTC">
+      <ops kind="point" />
       <packet numItems="1" itemBytes="24" encoding="utf8" />
     </scalar>
 
@@ -25,7 +26,7 @@
       sequences instead.  Explicit offsets are given below to illustrate
       usage of the values element.
       -->
-      <values>
+      <values valTerm=";">
          0;    20;    40;    60;    80;   100;   120;   140;   160;   180;
        200;   220;   240;   260;   280;   300;   320;   340;   360;   380;   
        400;   420;   440;   460;   480;   500;   520;   540;   560;   580;   

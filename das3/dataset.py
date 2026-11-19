@@ -2,7 +2,7 @@
 
 # The MIT License
 #
-# Copyright 2019 Chris Piker
+# Copyright 2019-2026 Chris Piker
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,7 @@
 a thin layer on ndarrays"""
 
 import sys
+import warnings
 import numpy
 import numpy.ma
 from collections import Counter, namedtuple
@@ -304,7 +305,7 @@ class Quantity(namedtuple('Quantity', 'value unit')):
 	Furthermore Quantities have no knowledge of thier degenericies.
 
 	To avoid extra dependencies, the AstroPy Quantity class is not used directly
-	within das2py, but users of both this library and Astropy are encouraged to
+	within das3py, but users of both this library and Astropy are encouraged to
 	convert das3.Quantity objects to astropy.units.Quantity objects using the
 	the :meth:`das3.astro._wrap() function from the optional
 	:mod:`das3.astro` module.
@@ -468,7 +469,7 @@ class Quantity(namedtuple('Quantity', 'value unit')):
 
 # Variables could easily have been based off of Quantities in Astropy, and
 # maybe that is the right way to do it.  But since I never know what external
-# packages may be used with das2py and I don't want to require astropy as a
+# packages may be used with das3py and I don't want to require astropy as a
 # dependency.
 #
 # I'm going to just go with my own class which allows for some creative
@@ -487,15 +488,16 @@ class Variable(object):
 	  - .ops   - None, or a dictionary describing the math formalism of a
 	        composite value: 'kind' plus the parameters from the stream's
 	        <ops> element under their wire names (frame, body, system, ...)
-	  - .subrank - How many trailing indices of .array are internal to one
-	        value (1 for a vector, 2 for a matrix), 0 for a scalar.  See
-	        extShape() and intrShape() for the two halves of the shape.
+	  - .intrRank - How many trailing indices of .array are internal to one
+	        value (1 for a vector, 2 for a matrix), 0 for a scalar.  Read
+	        only.  See extShape() and intrShape() for the two halves of the
+	        shape.
 	  - .labels - One label per component in storage order, or None when the
 	        variable was not read from a stream
 
 	Variables are very similar to Quantities in AstroPy.
 	"""
-	def __init__(self, dim, role, values, units, axis=None, fill=None, subrank=0):
+	def __init__(self, dim, role, values, units, axis=None, fill=None, intrRank=0):
 		"""Create a new Variable.
 
 		Args:
@@ -517,7 +519,7 @@ class Variable(object):
 			fill (float,str) : If specified, a masked array will be constructed
 				using this value as mask-out flag.
 
-			subrank (int, optional) : How many trailing indices of values are
+			intrRank (int, optional) : How many trailing indices of values are
 				internal to one value (1 for a vector, 2 for a 3x3 matrix).  These
 				are not dataset indices and take no part in broadcasting.
 		"""
@@ -527,7 +529,7 @@ class Variable(object):
 		self.units = units
 		self.array = None
 		self.fill = fill
-		self.subrank = subrank
+		self._intrRank = intrRank
 		self.ops = None
 		self.labels = None
 
@@ -562,10 +564,10 @@ class Variable(object):
 
 		# Only the external shape takes part in index bookkeeping.  The
 		# internal shape rides along at the end of every broadcast below.
-		nExt = len(array.shape) - subrank
+		nExt = len(array.shape) - intrRank
 		if nExt < 0:
 			raise DatasetError("Variable %s:%s has %d indices but claims %d internal"%(
-				dim.name, role, len(array.shape), subrank))
+				dim.name, role, len(array.shape), intrRank))
 		tExt = array.shape[:nExt]
 		tIntern = array.shape[nExt:]
 
@@ -659,13 +661,26 @@ class Variable(object):
 	def extShape(self):
 		"""The shape of this variable over the dataset indices alone, without
 		the trailing internal shape of a composite value."""
-		return self.array.shape[:len(self.array.shape) - self.subrank]
+		return self.array.shape[:len(self.array.shape) - self._intrRank]
 
 	def intrShape(self):
 		"""The internal shape of one value: (3,) for a vector, (3, 3) for a
 		matrix, () for a scalar.  These indices trail extShape() in .array.
 		Mirrors DasVar_intrShape() in das2C."""
-		return self.array.shape[len(self.array.shape) - self.subrank:]
+		return self.array.shape[len(self.array.shape) - self._intrRank:]
+
+	@property
+	def intrRank(self):
+		"""How many trailing indices of .array are internal to one value: 1
+		for a vector, 2 for a matrix, 0 for a scalar.  Same as
+		len(intrShape()).  Read only, it's fixed when the variable is made."""
+		return self._intrRank
+
+	@property
+	def extRank(self):
+		"""How many dataset indices lead .array, the same as len(extShape())
+		and as the dataset's rank.  Read only."""
+		return len(self.array.shape) - self._intrRank
 
 	def __str__(self):
 		lIdx = []
@@ -685,8 +700,8 @@ class Variable(object):
 		# Internal indices get a second bracket with capital letters, matching
 		# das2C's printer, so var.array[i,j][I,J] is literally the indexing
 		# the string shows.  Scalars print as they always have.
-		if self.subrank > 0:
-			sIdx += ']['  + ','.join(g_sIdxNames[n].upper() for n in range(self.subrank))
+		if self._intrRank > 0:
+			sIdx += ']['  + ','.join(g_sIdxNames[n].upper() for n in range(self._intrRank))
 
 		#return "%s['%s'][%s] %s | %s"%(self.dim.name, self.name, sIdx, self.units, sRng)
 		sOut = "%s['%s'][%s] (%s) %s"%(self.dim.name, self.name, sIdx, self.array.dtype, self.units)
@@ -694,7 +709,7 @@ class Variable(object):
 
 	def _bcast(self, shape):
 		shape = tuple(shape)
-		nExt = len(self.array.shape) - self.subrank
+		nExt = len(self.array.shape) - self._intrRank
 		tIntern = self.array.shape[nExt:]
 		if shape == self.array.shape[:nExt]: return
 
@@ -732,7 +747,7 @@ class Variable(object):
 			new_ary = self.array + (other.array * rFactor)
 
 		var = Variable(self.dim, None, new_ary, self.units, fill=self.fill,
-		               subrank=self.subrank)
+		               intrRank=self._intrRank)
 		return var
 
 
@@ -755,16 +770,46 @@ class Variable(object):
 		
 	def uniIndex(self):
 		"""Get a non-degenerate slice tuple
-		
-		To grab the non-degenerate values of this variable use::
-		
-		   idx = var.uniIndex()
-			aUnique = var.array[ var.uniIndex() ]
-		
-		Returns: tuple of slice objects and integers
+
+		var.array[var.uniIndex()] gives the non-degenerate values of this
+		variable, which is what storage() returns.
+
+		Returns: tuple of slice objects and integers, one per dataset index.
+		   Internal indices of composite values are not listed, so they come
+		   through whole.
 		"""
 		tSlice = tuple([slice(None, None, None) if b else 0 for b in self.unique])
 		return tSlice
+
+	def storage(self):
+		"""The values as stored, one per distinct value.
+
+		.array has the dataset's full shape so that every variable in a
+		dataset takes the same indices. This method provides the stored values
+		as a compact array with no broadcasts, and no distinction between
+		internal composite item indexes and external dataset indexes. Semantic
+		information required to distinguish the meanding behind each array
+		dimension is not provided by this call. 
+
+		To see how this plays out, consider an energy table that only varies
+		with the second dataset index, and a 3-vector that only varies with
+		the first:
+
+		   >>> energy.array.shape, energy.unique
+		   ((4, 47, 16), [False, True, False])
+		   >>> energy.storage().shape
+		   (47,)
+		   >>> location.array.shape, location.unique
+		   ((4, 47, 16, 3), [True, False, False])
+		   >>> location.storage().shape
+		   (4, 3)
+
+		Returns:
+			numpy.ndarray, or numpy.ma.MaskedArray if the variable has fill
+			values.  This is a view that shares memory with .array, not a
+			copy.  Call .copy() on it before changing any values.
+		"""
+		return self.array[self.uniIndex()]
 
 	def containsAny(self, quant):
 		"""Are any of the given values within the range of this Variable
@@ -858,15 +903,15 @@ class Dimension(object):
 		self.vars = {}
 		self.name = sName
 
-	def var(self, role, values, units, axis=None, fill=None, subrank=0):
+	def var(self, role, values, units, axis=None, fill=None, intrRank=0):
 		"""Create or replace a variable in this dimension.
 
 		Add a variable to a dataset can trigger broadcasting of other variables
 		to fill the required index space.  See :class:`das3.Variable` for the
-		meaning of subrank.
+		meaning of intrRank.
 		"""
 
-		_var = Variable(self, role, values, units, axis, fill, subrank)
+		_var = Variable(self, role, values, units, axis, fill, intrRank)
 		self.vars[role] = _var
 
 		# If there happens to be both a reference and offset variable
@@ -917,6 +962,15 @@ class Dimension(object):
 		"""Does this dimension carry the named property with the given value.
 		False, not an error, when the property is absent."""
 		return (sKey in self.props) and (self.props[sKey] == sValue)
+
+	def propEq(self, sKey, sValue):
+		"""Deprecated spelling of hasPropVal(), the 2.3 name, which das2py
+		2.3's own examples used.  Removal planned for 3.1."""
+		warnings.warn(
+			"Dimension.propEq() is deprecated, use Dimension.hasPropVal()",
+			PendingDeprecationWarning, stacklevel=2
+		)
+		return self.hasPropVal(sKey, sValue)
 
 	def __contains__(self,key):
 		if not isinstance(key, str):
@@ -1005,12 +1059,19 @@ class Dataset(object):
 		"""
 
 		self.name = sId
-		self.rank = 0
 		self.group = group
 		self.props = {}
 		self._dCoord = {}
 		self._dData = {}
 		self.shape = ()  # Empty tuple
+
+	@property
+	def rank(self):
+		"""The number of dataset indices, len(shape).  A dataset has no
+		internal indices, those belong to composite variables, see
+		Variable.intrRank.  Read only; until 3.0.5 this was a field that
+		stayed 0."""
+		return len(self.shape)
 
 	def coord(self, sId):
 		"""Create or get a coordinate dimension"""
@@ -1316,7 +1377,7 @@ class Dataset(object):
 	#                       # columns of C
 	#
 	# from an algorithm view, but *NOT* from a human view.  Sorting should
-	# JUST WORK without das2py users needing to know the details of the storage
+	# JUST WORK without das3py users needing to know the details of the storage
 	# arrays.
 	#
 	# It gets even weirder if we're to sort on A[i] and B[i,j] for data arrays
@@ -1745,9 +1806,9 @@ def _mk_var_from_raw(dim, dRawDs, sRole, dRaw, bMask=False):
 
 	# Array indices past the mapped ones are internal to one value
 	nMapped = sum(1 for i in lMap if i is not None)
-	nSubRank = len(array.shape) - nMapped
+	nIntrRank = len(array.shape) - nMapped
 
-	return dim.var(sRole, array, sUnits, axis=nAxis, fill=fill, subrank=nSubRank)
+	return dim.var(sRole, array, sUnits, axis=nAxis, fill=fill, intrRank=nIntrRank)
 
 # #########################
 

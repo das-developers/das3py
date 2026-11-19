@@ -1,18 +1,18 @@
-/* Copyright (C) 2015-2024 Chris Piker <chris-piker@uiowa.edu>
+/* Copyright (C) 2015-2026 Chris Piker <chris-piker@uiowa.edu>
  *
- * This file is part of das2py, the Core Das2 C Library.
+ * This file is part of das3py, the das2C python wrapper
  * 
- * Das2py is free software; you can redistribute it and/or modify it under
+ * Das3py is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License version 2.1 as published
  * by the Free Software Foundation.
  *
- * Das2py is distributed in the hope that it will be useful, but WITHOUT ANY
+ * Das3py is distributed in the hope that it will be useful, but WITHOUT ANY
  * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  * FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for
  * more details.
  *
  * You should have received a copy of the GNU Lesser General Public License
- * version 2.1 along with das2py; if not, see <http://www.gnu.org/licenses/>. 
+ * version 2.1 along with das3py; if not, see <http://www.gnu.org/licenses/>. 
  */
 
 #include <Python.h>
@@ -37,14 +37,12 @@
 
 
 #include <das3/util.h>
-#include <das3/das1.h>
 #include <das3/units.h>
 #include <das3/time.h>
 #include <das3/log.h>
-#include <das3/tt2000.h>
 #include <das3/units.h>
-#include <das3/credentials.h>
-#include <das3/operator.h>
+#include <das3/creds.h>
+#include <das3/oper.h>
 /* #include <python3.4m/modsupport.h> */
 
 /* static char* myname i= "_das3"; */
@@ -57,30 +55,77 @@ static PyObject* g_pPyD2Error;
 static PyObject* g_pPyD2QueryErr;
 static PyObject* g_pPyD2AuthErr;
 
+/* das2C keeps no copy of an error after daserrf() returns, so the log hook
+ * below saves the most recent one here, location included, for
+ * pyd2_setException().  The strings in a DasLogMsg die when the hook
+ * returns, hence the copies. */
+#define D2PY_ERR_LOC_SZ 256
+typedef struct pyd2_err {
+	das_errcode nErr;                 /* 0 when nothing saved */
+	char sMsg[DASLOG_MSG_SZ];
+	char sFile[D2PY_ERR_LOC_SZ];
+	char sFunc[D2PY_ERR_LOC_SZ];
+	int  nLine;
+} pyd2_err_t;
+
+static pyd2_err_t g_lastErr = {0};
+
+/* Raise pExcept from the last daserrf() record, then forget it.  Without the
+ * reset, a later call that fails without logging would report an old,
+ * unrelated error as its own. */
 static PyObject* pyd2_setException(PyObject* pExcept){
-	das_error_msg* pErr = das_get_error();
-	return PyErr_Format(
-		pExcept, "%s (reported from %s:%d, %s)", pErr->message, pErr->sFile,
-		pErr->nLine, pErr->sFunc	
+	if(g_lastErr.nErr == DAS_OKAY){
+		PyErr_SetString(pExcept, "das2C reported failure but logged no error");
+		return NULL;
+	}
+	PyErr_Format(
+		pExcept, "%s (reported from %s:%d, %s)", g_lastErr.sMsg, g_lastErr.sFile,
+		g_lastErr.nLine, g_lastErr.sFunc
 	);
+	memset(&g_lastErr, 0, sizeof(g_lastErr));
+	return NULL;
+}
+
+/* Same, but the bare message, which is what the dft objects have always
+ * raised.  A saved record with a code other than nErr belongs to some other
+ * failure; DAS_OKAY for nErr takes any record. */
+static void pyd2_setErrText(PyObject* pExcept, das_errcode nErr){
+	if((g_lastErr.nErr != DAS_OKAY)&&((nErr == DAS_OKAY)||(nErr == g_lastErr.nErr)))
+		PyErr_SetString(pExcept, g_lastErr.sMsg);
+	else
+		PyErr_SetString(pExcept, "Unknown error");
+	memset(&g_lastErr, 0, sizeof(g_lastErr));
 }
 
 /* Keep errors so that they may be returned as exceptions, let INFO go to
  * stderr and deep six DEBUG and below */
-#define D2PY_LOG_BUF_SZ 512
+#define D2PY_LOG_BUF_SZ DASLOG_MSG_SZ
 static char g_sLogBuf[D2PY_LOG_BUF_SZ] = {'\0'};
 
-static void pyd2_error_log_handler(int nLevel, const char* sMsg, bool bPrnTime)
+/* Runs under das2C's log lock, on whatever thread logged.  Per the hook
+ * contract in log.h it must not call back into das2C or take the GIL, so
+ * it only copies text into C buffers. */
+static void pyd2_onLog(const DasLogMsg* pMsg, void* pUser)
 {
-	if((nLevel == DASLOG_CRIT)||(nLevel == DASLOG_ERROR)||(nLevel == DASLOG_WARN)){
+	(void)pUser;
+
+	if(pMsg->errCode != DAS_OKAY){
+		g_lastErr.nErr = pMsg->errCode;
+		snprintf(g_lastErr.sMsg, DASLOG_MSG_SZ, "%s", pMsg->msg);
+		snprintf(g_lastErr.sFile, D2PY_ERR_LOC_SZ, "%s", pMsg->file ? pMsg->file : "?");
+		snprintf(g_lastErr.sFunc, D2PY_ERR_LOC_SZ, "%s", pMsg->func ? pMsg->func : "?");
+		g_lastErr.nLine = pMsg->line;
+	}
+
+	if(pMsg->level >= DASLOG_WARN){
 		/* Copy the error message into the buffer if and only if it's empty */
 		/* this way later errors don't over-write the root cause */
-		if(g_sLogBuf[0] == '\0') strncpy(g_sLogBuf, sMsg, D2PY_LOG_BUF_SZ - 1);
+		if(g_sLogBuf[0] == '\0') snprintf(g_sLogBuf, D2PY_LOG_BUF_SZ, "%s", pMsg->msg);
 		return;
 	}
-	
-	if(nLevel == DASLOG_INFO){
-		fprintf(stderr, "INFO: %s\n", sMsg);
+
+	if(pMsg->level == DASLOG_INFO){
+		fprintf(stderr, "INFO: %s\n", pMsg->msg);
 	}
 }
 
@@ -101,6 +146,17 @@ static PyObject* pyd2_setExceptFromLog(PyObject* pExcept){
 	return NULL;
 }
 
+
+/* DasUnits_fromStr() still makes a unit out of any well formed string,
+ * "cows^2" included, but returns NULL for broken syntax such as "cows^"
+ * where v2 took it as is.  Raise for that here, before NULL reaches a das2C
+ * call that treats it as an error of its own. */
+static bool _pyd2_units(const char* sUnits, DasUnits* pUnits){
+	*pUnits = DasUnits_fromStr(sUnits);
+	if(*pUnits != NULL) return true;
+	PyErr_Format(PyExc_ValueError, "Can't parse units '%s'", sUnits);
+	return false;
+}
 
 /*****************************************************************************/
 /* parsetime */
@@ -134,18 +190,18 @@ const char pyd2help_parsetime[] =
 static PyObject* pyd2_parsetime(PyObject* self, PyObject* args)
 {
 	const char* sTime;
-	int year, month, mday, yday, hour, min;
-	double sec;
+	DasTime dt;
 	
 	if(!PyArg_ParseTuple(args, "s:parsetime", &sTime))
 		return NULL;
 	
-	if(parsetime(sTime, &year, &month, &mday, &yday, &hour, &min, &sec) != 0){
+	if(!DasTime_fromStr(&dt, sTime)){
 		PyErr_SetString(PyExc_ValueError, "String was not parsable as a datetime");
 		return NULL;
 	}
 	
-	return Py_BuildValue("(iiiiiid)", year, month, mday, yday, hour, min, sec);
+	return Py_BuildValue("(iiiiiid)", dt.year, dt.month, dt.mday, dt.yday,
+		dt.hour, dt.minute, dt.second);
 }
 
 const char pyd2help_parse_epoch[] = 
@@ -195,14 +251,15 @@ static PyObject* pyd2_parse_epoch(PyObject* self, PyObject* args)
 	if(!PyArg_ParseTuple(args, "ds:parse_epoch", &rTime, &sUnits))
 		return NULL;
 	
-	das_units units = Units_fromStr(sUnits);
-	if(! Units_haveCalRep(units)){
+	DasUnits units;
+	if(!_pyd2_units(sUnits, &units)) return NULL;
+	if(! DasUnits_isTimePoint(units)){
 		PyErr_SetString(PyExc_ValueError, "Units are not a recognized epoch time");
 		return NULL;
 	}
 	
-	das_time dt;
-	Units_convertToDt(&dt, rTime, units);
+	DasTime dt;
+	DasTime_fromPoint(&dt, rTime, units);
 	
 	return Py_BuildValue("(iiiiiid)", dt.year, dt.month, dt.mday, dt.yday, 
 	                     dt.hour, dt.minute, dt.second);
@@ -245,7 +302,7 @@ static const int days[2][14] = {
 static PyObject* pyd2_to_epoch(PyObject* self, PyObject* args)
 {
 	//             y  m  md yd h  m  s
-	das_time dt = {0, 1, 1, 1, 0, 0, 0.0};
+	DasTime dt = {0, 1, 1, 1, 0, 0, 0.0};
 	double rEpoch = 0.0;
 	const char* sTo = NULL;
 
@@ -254,8 +311,9 @@ static PyObject* pyd2_to_epoch(PyObject* self, PyObject* args)
 		&(dt.mday), &(dt.hour), &(dt.minute), &(dt.second)
 	)) return NULL;
 
-	das_units units = Units_fromStr(sTo);
-	if(! Units_haveCalRep(units)){
+	DasUnits units;
+	if(!_pyd2_units(sTo, &units)) return NULL;
+	if(! DasUnits_isTimePoint(units)){
 		PyErr_SetString(PyExc_ValueError, "Units are not a recognized epoch time");
 		return NULL;
 	}
@@ -312,7 +370,7 @@ static PyObject* pyd2_to_epoch(PyObject* self, PyObject* args)
 
 	/* Okay, we can now safely convert day-of-year times to TT2000 since
 	   we won't accidentally roll-over the leap seconds */
-	rEpoch = Units_convertFromDt(units, &dt);
+	rEpoch = DasTime_toPoint(&dt, units);
 	return Py_BuildValue("d", rEpoch);
 }
 
@@ -331,16 +389,13 @@ static PyObject* pyd2_tt2k_utc(PyObject* self, PyObject* args)
 	if(!PyArg_ParseTuple(args, "L:tt2k_utc", &tt))
 		return NULL;
 
-	double yr, mt=1.0, dy=1.0, hr=0.0, mn=0.0, sc=0.0, ms=0.0, us=0.0, ns=0.0;
+	int iyr, imt, idy, ihr, imn, isc;
+	int32_t nNano;
 
-	das_tt2K_to_utc(tt, &yr, &mt, &dy, &hr, &mn, &sc, &ms, &us, &ns);
-	
-	int iyr = (int)yr;
-	int imt = (int)mt;
-	int idy = (int)dy;
-	int ihr = (int)hr;
-	int imn = (int)mn;
-	double dSec = sc + ms*1e-3 + us*1e-6 + ns*1e-9;
+	/* Integer fields straight from das2C, the only rounding is the final
+	   add, same as the v2 CDF call path did */
+	DasTime_tt2kToUtc((int64_t)tt, &iyr, &imt, &idy, &ihr, &imn, &isc, &nNano);
+	double dSec = isc + nNano*1e-9;
 	
 	return Py_BuildValue("(iiiiid)", iyr, imt, idy, ihr, imn, dSec);
 }
@@ -363,27 +418,20 @@ static PyObject* pyd2_utc_tt2k(PyObject* self, PyObject* args)
 	if(!PyArg_ParseTuple(args, "iiiiid:utc_tt2k", &nYr, &nMn, &nDom, &nHr, &nMin, &dSec))
 		return NULL;
 		
-	/* CDF var-args function *requires* doubles and *can't* tell if it 
-	   doesn't get them! */
-	double dYr = nYr;  double dMn  = nMn;  double dDom = nDom;
-	double dHr = nHr;  double dMin = nMin;
-
 	int nSc = (int)dSec;           /* seconds field */
 
-	double dMs = (dSec - nSc)*1e3; /* All milliseconds */
-	int nMs = (int)dMs;            /* Millisec field */
+	/* One rounding to the nanosecond.  A fraction that rounds up to a whole
+	   second is fine as is, das2C carries nanosec past 1e9 into the second
+	   field, leap second aware. */
+	int32_t nNano = (int32_t)llround((dSec - nSc)*1e9);
 
-	double dUs = (dMs - nMs)*1e3;  /* All microseconds */
-	int nUs = (int)dUs;            /* Microsec field */
+	/* v2 returned the CDF illegal-value sentinel for out of range fields,
+	   which nothing checked; das2C now reports them, so raise instead */
+	int64_t ntt2k = 0;
+	if(DasTime_utcToTt2k(nYr, nMn, nDom, nHr, nMin, nSc, nNano, &ntt2k) != DAS_OKAY)
+		return pyd2_setException(PyExc_ValueError);
 
-	double dNs = round( (dUs - nUs)*1e3);  /* All nanoseconds */
-	int nNs = (int)dNs;                    /* Nanosec field */
-		
-	long long ntt2k = das_utc_to_tt2K(
-		dYr, dMn, dDom, dHr, dMin, (double)nSc, (double)nMs, (double)nUs, (double)nNs
-	);
-
-	return Py_BuildValue("L", ntt2k);
+	return Py_BuildValue("L", (long long)ntt2k);
 }
 
 
@@ -417,7 +465,6 @@ static PyObject* pyd2_ttime(PyObject* self, PyObject* args)
 	int mday = 1;
 	int hour = 0;
 	int min = 0;
-	int ignored = 0;
 	double sec = 0.0;
 	double dRet;
 	
@@ -425,7 +472,8 @@ static PyObject* pyd2_ttime(PyObject* self, PyObject* args)
 			               &min, &sec))
 		return NULL;
 	
-	dRet = ttime(&year, &month, &mday, &ignored, &hour, &min, &sec);
+	DasTime dt = {year, month, mday, 0, hour, min, sec};
+	dRet = DasTime_toSec1958(&dt);
 	
 	return Py_BuildValue("d", dRet);
 }
@@ -440,15 +488,15 @@ const char pyd2help_emitt[] =
 static PyObject* pyd2_emitt(PyObject* self, PyObject* args)
 {
 	double dEpoch;
-	int year, month, mday, yday, hour, min;
-	double sec;
+	DasTime dt;
 
 	if(!PyArg_ParseTuple(args, "d:emitt", &dEpoch))
 		return NULL;
 
-	emitt(dEpoch, &year, &month, &mday, &yday, &hour, &min, &sec);
+	DasTime_fromSec1958(&dt, dEpoch);
 	
-	return Py_BuildValue("(iiiiiid)", year, month, mday, yday, hour, min, sec);
+	return Py_BuildValue("(iiiiiid)", dt.year, dt.month, dt.mday, dt.yday,
+		dt.hour, dt.minute, dt.second);
 }
 
 const char pyd2help_tnorm[] =
@@ -482,13 +530,16 @@ static PyObject* pyd2_tnorm(PyObject* self, PyObject* args)
 						 &hour, &min, &sec))
 		return NULL;
 
-	tnorm(&year, &month, &mday, &yday, &hour, &min, &sec);
+	DasTime dt = {year, month, mday, yday, hour, min, sec};
+	DasTime_normalize(&dt);
 
-	return Py_BuildValue("(iiiiiid)", year, month, mday, yday, hour, min, sec);
+	return Py_BuildValue("(iiiiiid)", dt.year, dt.month, dt.mday, dt.yday,
+		dt.hour, dt.minute, dt.second);
 }
 
 /* ************************************************************************* */
 /* Unit conversions */
+
 
 static const char pyd2help_unit_norm [] = 
 "Normalize arbitrary unit strings to a standard compact form.\n"
@@ -506,8 +557,9 @@ static PyObject* pyd2_unit_norm(PyObject* self, PyObject* args){
 
 	if(!PyArg_ParseTuple(args, "s:unit_norm", &sFrom)) return NULL;
 	
-	das_units to = Units_fromStr(sFrom);
-	const char* sTo = Units_toStr(to);
+	DasUnits to;
+	if(!_pyd2_units(sFrom, &to)) return NULL;
+	const char* sTo = DasUnits_toStr(to);
 	return Py_BuildValue("s", sTo);
 }
 
@@ -538,18 +590,12 @@ static PyObject* pyd2_convertible(PyObject* self, PyObject* args){
 	
 	if(!PyArg_ParseTuple(args, "ss:convertible", &sFrom, &sTo)) return NULL;
 	
-	das_units from = Units_fromStr(sFrom);
-	das_units to = Units_fromStr(sTo);
-	if(from == NULL){
-		PyErr_Format(PyExc_ValueError, "un-parsable units '%s'", sFrom);
-		return NULL;
-	}
-	if(to == NULL){
-		PyErr_Format(PyExc_ValueError, "un-parsable units '%s'", sTo);
-		return NULL;
-	}
-	
-	if(Units_canConvert(from, to))  Py_RETURN_TRUE;
+	/* Unparsable is an error, not "not convertible", so a typo such as
+	 * 'tt2000' for 'TT2000' isn't silently answered False */
+	DasUnits from, to;
+	if(!_pyd2_units(sFrom, &from) || !_pyd2_units(sTo, &to)) return NULL;
+
+	if(DasUnits_canConvert(from, to))  Py_RETURN_TRUE;
 	else Py_RETURN_FALSE;
 }
 
@@ -576,10 +622,10 @@ static PyObject* pyd2_convert(PyObject* self, PyObject* args)
 	double rFrom = 0.0;
 	if(!PyArg_ParseTuple(args, "dss:convert", &rFrom, &sFrom, &sTo)) return NULL;
 	
-	das_units from = Units_fromStr(sFrom);
-	das_units to = Units_fromStr(sTo);
+	DasUnits from, to;
+	if(!_pyd2_units(sFrom, &from) || !_pyd2_units(sTo, &to)) return NULL;
 	
-	double rTo = Units_convertTo(to, rFrom, from);
+	double rTo = DasUnits_convert(rFrom, from, to);
 	return Py_BuildValue("d", rTo);
 }
 
@@ -599,18 +645,20 @@ static PyObject* pyd2_unit_mul(PyObject* self, PyObject* args)
 	const char* sRight = NULL;
 	if(!PyArg_ParseTuple(args, "ss:unit_mul", &sLeft, &sRight)) return NULL;
 	
-	das_units left = Units_fromStr(sLeft);
-	das_units right = Units_fromStr(sRight);
+	DasUnits left;
+	if(!_pyd2_units(sLeft, &left)) return NULL;
+	DasUnits right;
+	if(!_pyd2_units(sRight, &right)) return NULL;
 	
-	bool bRet = Units_canMerge(left, D2BOP_MUL, right);
+	bool bRet = DasUnits_canMerge(left, DASOP_MUL, right);
 	if(!bRet){
 		PyErr_Format(PyExc_TypeError, "Unsupported operation '*' for units "
 				       "%s and %s", sLeft, sRight);
 		return NULL;
 	}
 	
-	das_units ret = Units_multiply(left, right);
-	const char* sTo = Units_toStr(ret);
+	DasUnits ret = DasUnits_mul(left, right);
+	const char* sTo = DasUnits_toStr(ret);
 	return Py_BuildValue("s", sTo);
 }
 
@@ -630,18 +678,20 @@ static PyObject* pyd2_unit_div(PyObject* self, PyObject* args)
 	const char* sDenom = NULL;
 	if(!PyArg_ParseTuple(args, "ss:unit_div", &sNum, &sDenom)) return NULL;
 	
-	das_units num = Units_fromStr(sNum);
-	das_units denom = Units_fromStr(sDenom);
+	DasUnits num;
+	if(!_pyd2_units(sNum, &num)) return NULL;
+	DasUnits denom;
+	if(!_pyd2_units(sDenom, &denom)) return NULL;
 	
-	bool bRet = Units_canMerge(num, D2BOP_DIV, denom);
+	bool bRet = DasUnits_canMerge(num, DASOP_DIV, denom);
 	if(!bRet){
 		PyErr_Format(PyExc_TypeError, "Unsupported operation '/' for units "
 				       "%s and %s", sNum, sDenom);
 		return NULL;
 	}
 	
-	das_units ret = Units_divide(num, denom);
-	const char* sTo = Units_toStr(ret);
+	DasUnits ret = DasUnits_div(num, denom);
+	const char* sTo = DasUnits_toStr(ret);
 	return Py_BuildValue("s", sTo);
 }
 
@@ -661,13 +711,14 @@ static PyObject* pyd2_unit_pow(PyObject* self, PyObject* args)
 	int nPow = 1;
 	if(!PyArg_ParseTuple(args, "si:unit_pow", &sUnits, &nPow)) return NULL;
 	
-	das_units units = Units_fromStr(sUnits);
-	if(units == UNIT_DIMENSIONLESS){
+	DasUnits units;
+	if(!_pyd2_units(sUnits, &units)) return NULL;
+	if(units == DASUNITS_DIMENSIONLESS){
 		return Py_BuildValue("s", "");
 	}
 
-	das_units ret = Units_power(units, nPow);
-	const char* sTo = Units_toStr(ret);
+	DasUnits ret = DasUnits_pow(units, nPow);
+	const char* sTo = DasUnits_toStr(ret);
 	return Py_BuildValue("s", sTo);
 }
 
@@ -687,13 +738,14 @@ static PyObject* pyd2_unit_root(PyObject* self, PyObject* args)
 	int nRoot = 1;
 	if(!PyArg_ParseTuple(args, "sd:unit_root", &sUnits, &nRoot)) return NULL;
 	
-	das_units units = Units_fromStr(sUnits);
-	if(units == UNIT_DIMENSIONLESS){
+	DasUnits units;
+	if(!_pyd2_units(sUnits, &units)) return NULL;
+	if(units == DASUNITS_DIMENSIONLESS){
 		return Py_BuildValue("s", "");
 	}
 
-	das_units ret = Units_root(units, nRoot);
-	const char* sTo = Units_toStr(ret);
+	DasUnits ret = DasUnits_root(units, nRoot);
+	const char* sTo = DasUnits_toStr(ret);
 	return Py_BuildValue("s", sTo);
 }
 
@@ -711,13 +763,14 @@ static PyObject* pyd2_unit_invert(PyObject* self, PyObject* args)
 	const char* sUnits = NULL;
 	if(!PyArg_ParseTuple(args, "s:unit_invert", &sUnits)) return NULL;
 	
-	das_units units = Units_fromStr(sUnits);
-	if(units == UNIT_DIMENSIONLESS){
+	DasUnits units;
+	if(!_pyd2_units(sUnits, &units)) return NULL;
+	if(units == DASUNITS_DIMENSIONLESS){
 		return Py_BuildValue("s", "");
 	}
 
-	das_units ret = Units_invert(units);
-	const char* sTo = Units_toStr(ret);
+	DasUnits ret = DasUnits_invert(units);
+	const char* sTo = DasUnits_toStr(ret);
 	return Py_BuildValue("s", sTo);
 }
 
@@ -748,17 +801,17 @@ static PyObject* pyd2_can_merge(PyObject* self, PyObject* args)
 	
 	if(!PyArg_ParseTuple(args, "sss:canMerge", &sLeft, &sOp, &sRight)) return NULL;
 	
-	das_units left = Units_fromStr(sLeft);
-	das_units right = Units_fromStr(sRight);
+	DasUnits left, right;
+	if(!_pyd2_units(sLeft, &left) || !_pyd2_units(sRight, &right)) return NULL;
 	char sError[64] = {'\0'};
 	
-	int nOp = das_op_binary(sOp);
-	if(nOp == D2OP_INVALID){
+	int nOp = dasop_binary(sOp);
+	if(nOp == DASOP_INVALID){
 		snprintf(sError, 63, "Invalid binary operator %s", sOp);
 		PyErr_SetString(PyExc_ValueError, sError);
 		return NULL;
 	}
-	bool bRet = Units_canMerge(left, nOp, right);
+	bool bRet = DasUnits_canMerge(left, nOp, right);
 	if(bRet)  Py_RETURN_TRUE;
 	else Py_RETURN_FALSE;
 }
@@ -827,16 +880,24 @@ static struct PyModuleDef moduledef = {
 	NULL,                      /* m_free */
 };
 
+/* Python 3 signals a failed init by returning NULL with an exception set */
+#define INIT_FAIL do{ \
+	PyErr_SetString(PyExc_ImportError, "das2C library initialization failed"); \
+	return NULL; }while(0)
+
 PyMODINIT_FUNC PyInit__das3(void){
 	PyObject* pMod;
 
 	/* This statement is required to setup libdas2.  If you leave it out you
 	 * will never get any unit values and errors will act funny.  You may even
 	 * get segfaults */
-	das_init("module _das3", DASERR_DIS_RET, 512, DASLOG_INFO, pyd2_error_log_handler);
+	DasLogHook hook = {pyd2_onLog, NULL};
+	if(daslib_init("module _das3", DASERRDISP_RET, DASLOG_INFO, &hook) != DAS_OKAY)
+		INIT_FAIL;
 
 	/* Initialize our single credentials manager */
-	g_pMgr = new_CredMngr(NULL);
+	g_pMgr = new_DasCredMgr();  /* no key file store, as in v2 */
+	if(g_pMgr == NULL) INIT_FAIL;
 	
 	if (PyType_Ready(&pyd2_DftType) < 0)
 		return NULL;
@@ -872,18 +933,26 @@ PyMODINIT_FUNC PyInit__das3(void){
 #else
 
 
+/* Python 2 init returns void, failure is just an exception left set */
+#define INIT_FAIL do{ \
+	PyErr_SetString(PyExc_ImportError, "das2C library initialization failed"); \
+	return; }while(0)
+
 PyMODINIT_FUNC init_das3(void){
 
 	/* This statement is required to setup libdas2.  If you leave it out you
 	 * will never get any unit values and errors will act funny.  You may even
 	 * get segfaults */
-	das_init("module _das3", DASERR_DIS_RET, 512, DASLOG_INFO, pyd2_error_log_handler);
+	DasLogHook hook = {pyd2_onLog, NULL};
+	if(daslib_init("module _das3", DASERRDISP_RET, DASLOG_INFO, &hook) != DAS_OKAY)
+		INIT_FAIL;
 	
 	/* Should probably set an log handler above that ties into python's logging
 	 * system */
 	
 	/* Initialize our single credentials manager */
-	g_pMgr = new_CredMngr(NULL);
+	g_pMgr = new_DasCredMgr();  /* no key file store, as in v2 */
+	if(g_pMgr == NULL) INIT_FAIL;
 	
 	if (PyType_Ready(&pyd2_DftType) < 0)
 		return;

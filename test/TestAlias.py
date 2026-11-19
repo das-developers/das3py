@@ -14,6 +14,47 @@ import warnings
 perr = sys.stderr.write
 
 
+def _testOldNames(das2):
+	"""The 2.3 method names that das2py 2.3's examples used still answer,
+	with one PendingDeprecationWarning each, the same as the 3.0 names."""
+	nBad = 0
+
+	class _Src(das2.Source):
+		# A stand-in for a catalog source, no network
+		def getProto(self, dConfig, verbose=False): return ('get', dConfig, verbose)
+		def infoProto(self): return 'info'
+	src = _Src.__new__(_Src)   # skip Node construction, it wants a catalog dict
+
+	ds = das2.Dataset('test')
+	dim = das2.Dimension(ds, 'frequency', 'coord')
+	dim.props['scaleType'] = 'log'
+
+	t = das2.DasTime('2026-09-13T01:02:03.456')
+
+	lCases = (
+		('DasTime.from_string', lambda: das2.DasTime.from_string('2026-09-13'),
+		                        das2.DasTime.fromString('2026-09-13')),
+		('DasTime.round_doy',   lambda: t.round_doy(t.MILLISEC), t.roundDoy(t.MILLISEC)),
+		('Dimension.propEq',    lambda: dim.propEq('scaleType', 'log'), True),
+		('Source.protoGet',     lambda: src.protoGet({'a':1}, verbose=True),
+		                        ('get', {'a':1}, True)),
+		('Source.protoInfo',    lambda: src.protoInfo(), 'info'),
+	)
+	for (sName, fOld, expect) in lCases:
+		with warnings.catch_warnings(record=True) as lWarn:
+			warnings.simplefilter('always')
+			got = fOld()
+		nDep = len([w for w in lWarn if issubclass(w.category, PendingDeprecationWarning)])
+		if nDep != 1:
+			nBad += 1
+			perr("FAIL: %s() gave %d PendingDeprecationWarnings, expected 1\n"%(sName, nDep))
+		if got != expect:
+			nBad += 1
+			perr("FAIL: %s() returned %r, expected %r\n"%(sName, got, expect))
+
+	return nBad
+
+
 def main(argv):
 	nBad = 0
 
@@ -53,6 +94,8 @@ def main(argv):
 	if not isinstance(t, das3.DasTime):
 		nBad += 1
 		perr("FAIL: a das2.DasTime is not a das3.DasTime\n")
+
+	nBad += _testOldNames(das2)
 
 	if nBad:
 		return 13

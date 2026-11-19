@@ -1,6 +1,6 @@
 # The MIT License
 #
-# Copyright 2019 Chris Piker
+# Copyright 2019-2026 Chris Piker
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,7 +28,7 @@ FILL = -1.0e+31
 # source path is given without one.
 DEF_CATALOG_TAG = 'tag:das2.org,2012:'
 
-__version__ = '3.0-pre7'
+__version__ = '3.0.5rc1'
 
 # Only the type comments below name Tuple, and those are read statically,
 # so the name need not stay on the package.

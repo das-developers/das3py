@@ -20,7 +20,7 @@ def getArrayAndUnits(ds, sDimType, sDim, sVar):
 	
 	if sDim not in dDims:
 		raise ValueError("%s not present among the %s dimensions of %s"%(
-		                 sDim, sType, ds['id']))
+		                 sDim, sDimType, ds['id']))
 		
 	# If the center variable is not present, we could fake it with min, max,
 	# width etc.  For this example just look for actual center variables.
@@ -36,17 +36,13 @@ def getArrayAndUnits(ds, sDimType, sDim, sVar):
 	if sVar == 'props':
 		raise ValueError("'props' is list of dimension properites, not a variable")
 
-	# Read the expression and find out which array is in use, note that
-	# variables based on operations on other variables are not supported in
+	# Each variable names its backing array and gives its units directly.
+	# The 'expression' is a summary for people, don't parse it.  Variables
+	# computed from other variables have no 'array' and aren't supported in
 	# this simple interface.
-	sExp = ds[sDimType][sDim][sVar]['expression']
-	
-	# Hack alert, I should be using regex, hide your eyes!
-	sExp = sExp[0:sExp.find('|')].strip()
-	n = sExp.rfind(']')
-	sUnits = sExp[n+1:].strip()
-	sAry = sExp[:n]
-	sAry = sAry[:sAry.find('[')]
+	dVar = dVars[sVar]
+	sAry = dVar.get('array')
+	sUnits = dVar['units']
 	
 	if sAry not in ds['arrays']:
 		raise ValueError("Array '%s' not included in dataset '%s'"%(sAry, ds['id']))
@@ -203,13 +199,9 @@ def main(argv):
 	(aY, unitsY) = getArrayAndUnits(ds, 'coords', 'frequency', 'center')
 	(aZ, unitsZ) = getArrayAndUnits(ds, 'data',  'electric', 'center')
 	
-	# Right now we're still stuck with the transmitted us2000 time units,
-	# will be able to have these converted-on-read in the future.
+	# Times are converted on read to numpy datetime64[ns] (units ns1970),
+	# which matplotlib plots directly as dates
 	(aX, unitsX) = getArrayAndUnits(ds, 'coords', 'time', 'center')
-	
-	# This will convert the time units to python datetime, but those don't
-	# seem to work for matplotlib
-	#aXfixed = N.array( [das3.DasTime(t, unitsX).pyDateTime() for t in aX] )
 	
 	aY = N.log10(aY)
 	aZ = N.log10(aZ.transpose())

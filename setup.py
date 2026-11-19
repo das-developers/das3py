@@ -191,14 +191,19 @@ class build_ext(_build_ext):
 
 setup(
 	cmdclass={'build_ext':build_ext},
-	name="das2py",
-	version="3.0rc7",
+	name="das3py",
+	version="3.0.5rc1",
 	ext_modules=[ext],
-	packages=['das3', 'das3.pycdf', 'das2'],
+	packages=['das3', 'das3.pycdf'],
 	author="C Piker",
 	author_email="das-developers@uiowa.edu",
-	url="https://das2.org/das2py",
-	scripts=['scripts/das_verify','scripts/das_cdf_info'],
+	url="https://github.com/das-developers/das3py",
+	# Same commands as [project.scripts] in pyproject.toml, which the
+	# setuptools releases for python 2.7 don't read
+	entry_points={'console_scripts': [
+		'das_verify = das3.verify:main',
+		'das_cdfinfo = das3.cdfinfo:main',
+	]},
 	include_package_data=True,
 	#package_data={'das2':['xsd/*.xsd']}, # <-- in das2C now
 	package_data={'das3.pycdf':[bname(sCdfSo)]},

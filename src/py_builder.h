@@ -1,18 +1,18 @@
-/* Copyright (C) 2017-2024 Chris Piker
+/* Copyright (C) 2017-2026 Chris Piker
  *
- * This file is part of das2py, the das2C python wrapper
+ * This file is part of das3py, the das2C python wrapper
  * 
- * Das2py is free software; you can redistribute it and/or modify it under
+ * Das3py is free software; you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License version 2.1 as published
  * by the Free Software Foundation.
  *
- * Das2py is distributed in the hope that it will be useful, but WITHOUT ANY
+ * Das3py is distributed in the hope that it will be useful, but WITHOUT ANY
  * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  * FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for
  * more details.
  *
  * You should have received a copy of the GNU Lesser General Public License
- * version 2.1 along with das2py; if not, see <http://www.gnu.org/licenses/>. 
+ * version 2.1 along with das3py; if not, see <http://www.gnu.org/licenses/>. 
  */
 
 
@@ -21,10 +21,9 @@
 
 #include <das3/io.h>
 #include <das3/http.h>
-#include <das3/builder.h>
 #include <das3/units.h>
 #include <das3/log.h>
-#include <das3/variable.h>
+#include <das3/var.h>
 #include <das3/form.h>
 
 #include <numpy/ndarrayobject.h>
@@ -57,7 +56,7 @@ static PyObject* g_pPyD2AuthErr;
 /* ************************************************************************* */
 /* Singleton Credentials manager */
 
-static DasCredMngr* g_pMgr = NULL;
+static DasCredMgr* g_pMgr = NULL;
 
 const char pyd2help_auth_set[] =
 "Set an authentication hash to be sent to remote servers when certain conditions\n"
@@ -97,12 +96,22 @@ static PyObject* pyd2_auth_set(PyObject* self, PyObject* args)
 
 	if(!PyArg_ParseTuple(args, "sss|s:set_auth", &url, &realm, &hash, &dataset))
 		return NULL;
-	das_credential cred;
 
-	das_cred_init(&cred, url, realm, dataset, hash);
-	int nCreds = CredMngr_addCred(g_pMgr, &cred);
+	/* A record and its secret are set separately now.  The hash is already
+	 * the base64 "user:password" that DASAUTH_BASIC sends as is. */
+	int16_t nCred = DasCredMgr_addCred(g_pMgr, url, realm, dataset);
+	if(nCred < 0){
+		PyErr_SetString(PyExc_ValueError,
+			"Credential not stored, a string was too long or the manager is full");
+		return NULL;
+	}
+	if(DasCredMgr_setSecret(g_pMgr, nCred, DASAUTH_BASIC, hash, NULL) != DAS_OKAY){
+		PyErr_SetString(PyExc_ValueError, "Authentication hash is too long");
+		return NULL;
+	}
 
-	return Py_BuildValue("i", nCreds);
+	/* Same return as v2: the number of credentials held */
+	return Py_BuildValue("i", DasCredMgr_numCreds(g_pMgr));
 }
 
 /* Helper for NDarray creation */
@@ -110,8 +119,9 @@ static void _npdims_from_shape(DasAry* pAry, PyArray_Dims* pNpDims){
 	ptrdiff_t shape[16] = {0};
 	DasAry_shape(pAry, shape);
 
-	pNpDims->len = pAry->nRank;
-	for(int i = 0; i < pAry->nRank; ++i) pNpDims->ptr[i] = shape[i];
+	int nRank = DasAry_rank(pAry);
+	pNpDims->len = nRank;
+	for(int i = 0; i < nRank; ++i) pNpDims->ptr[i] = shape[i];
 }
 
 /* ************************************************************************ */
@@ -122,9 +132,11 @@ PyObject* _DasCalAryToNumpyAry(DasAry* pAry)
 	/* Access the das2 array and the numpy array as a flat index space makes
 	 * looping faster as the for-loop to find the next multi-dimensional
 	 * index is not required */
-	size_t uLen;
-	das_val_type vt = DasAry_valType(pAry);
-	const void* pMem = DasAry_getIn(pAry, vt, DIM0, &uLen);
+	ptrdiff_t nLen = 0;
+	das_vt vt = DasAry_vt(pAry);
+	const void* pMem = DasAry_valsIn(pAry, vt, DAS_ADDR0, &nLen);
+	if(nLen < 0) return pyd2_setException(g_pPyD2Error);
+	size_t uLen = (size_t)nLen;
 
 	/* Create a Numpy Array descriptor that says we're going to use nanoseconds
 	 * since 1970-01-01 for the meaning of the stored int8_t values */
@@ -155,82 +167,82 @@ PyObject* _DasCalAryToNumpyAry(DasAry* pAry)
 	}
 
 	/* Type branch to keep inner loops small */
-	const ubyte* pUByte;   const int8_t* pByte;
+	const uint8_t* pUByte;   const int8_t* pByte;
 	const int16_t* pShort; const uint16_t* pUShort;
 	const int32_t* pInt;   const uint32_t* pUInt;
 	const int64_t* pLong;  const uint64_t* pULong;
 	const float* pFloat;   const double* pDbl;
-	const das_time* pDt;
+	const DasTime* pDt;
 	npy_intp nd_index0[16] = {'\0'};
 	int64_t* pNdData = (int64_t*) PyArray_GetPtr((PyArrayObject*)pNdAry, nd_index0);
 
 	size_t u = 0;
-	das_time dt;
-	das_units units = DasAry_units(pAry);
+	DasTime dt;
+	DasUnits units = DasAry_units(pAry);
 	switch(vt){
-	case vtUByte:
-		for(pUByte = (const ubyte*)pMem, u = 0; u < uLen; ++u, ++pUByte, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pUByte), units);
-			*pNdData = dt_nano_1970(&dt);
+	case DASVT_UBYTE:
+		for(pUByte = (const uint8_t*)pMem, u = 0; u < uLen; ++u, ++pUByte, ++pNdData) {
+			DasTime_fromPoint(&dt, (double)(*pUByte), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtByte:
+	case DASVT_BYTE:
 		for(pByte = (const int8_t*)pMem, u = 0; u < uLen; ++u, ++pByte, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pByte), units);
-			*pNdData = dt_nano_1970(&dt);
+			DasTime_fromPoint(&dt, (double)(*pByte), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtUShort:
+	case DASVT_USHORT:
 		for(pUShort = (const uint16_t*)pMem, u = 0; u < uLen; ++u, ++pUShort, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pUShort), units);
-			*pNdData = dt_nano_1970(&dt);
+			DasTime_fromPoint(&dt, (double)(*pUShort), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtShort:
+	case DASVT_SHORT:
 		for(pShort = (const int16_t*)pMem, u = 0; u < uLen; ++u, ++pShort, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pShort), units);
-			*pNdData = dt_nano_1970(&dt);
+			DasTime_fromPoint(&dt, (double)(*pShort), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtUInt:
+	case DASVT_UINT:
 		for(pUInt = (const uint32_t*)pMem, u = 0; u < uLen; ++u, ++pUInt, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pUInt), units);
-			*pNdData = dt_nano_1970(&dt);
+			DasTime_fromPoint(&dt, (double)(*pUInt), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtInt:
+	case DASVT_INT:
 		for(pInt = (const int32_t*)pMem, u = 0; u < uLen; ++u, ++pInt, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pInt), units);
-			*pNdData = dt_nano_1970(&dt);
+			DasTime_fromPoint(&dt, (double)(*pInt), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtULong:
+	case DASVT_ULONG:
 		for(pULong = (const uint64_t*)pMem, u = 0; u < uLen; ++u, ++pULong, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pULong), units);
-			*pNdData = dt_nano_1970(&dt);
+			DasTime_fromPoint(&dt, (double)(*pULong), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtLong:
+	case DASVT_LONG:
 		for(pLong = (const int64_t*)pMem, u = 0; u < uLen; ++u, ++pLong, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pLong), units);
-			*pNdData = dt_nano_1970(&dt);
+			DasTime_fromPoint(&dt, (double)(*pLong), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtFloat:
+	case DASVT_FLOAT:
 		for(pFloat = (const float*)pMem, u = 0; u < uLen; ++u, ++pFloat, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pFloat), units);
-			*pNdData = dt_nano_1970(&dt);
+			DasTime_fromPoint(&dt, (double)(*pFloat), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtDouble:
+	case DASVT_DOUBLE:
 		for(pDbl = (const double*)pMem, u = 0; u < uLen; ++u, ++pDbl, ++pNdData) {
-			Units_convertToDt(&dt, (double)(*pDbl), units);
-			*pNdData = dt_nano_1970(&dt);
+			DasTime_fromPoint(&dt, (double)(*pDbl), units);
+			*pNdData = DasTime_toNs1970(&dt);
 		}
 		break;
-	case vtTime:
-		for(pDt = (const das_time*)pMem, u = 0; u < uLen; ++u, ++pDt, ++pNdData){
-			*pNdData = dt_nano_1970((das_time*)pDt);
+	case DASVT_TIME:
+		for(pDt = (const DasTime*)pMem, u = 0; u < uLen; ++u, ++pDt, ++pNdData){
+			*pNdData = DasTime_toNs1970((DasTime*)pDt);
 		}
 		break;
 	default:
@@ -256,14 +268,16 @@ PyObject* _DasCalAryToNumpyAry(DasAry* pAry)
 PyObject* _DasTimeAryToNumpyAry(DasAry* pAry)
 {
 	/* Get the conversion factor to nanoseconds */
-	das_units units = DasAry_units(pAry);
-	double factor = Units_convertTo(UNIT_SECONDS, 1.0, units);
-	if(factor == DAS_FILL_VALUE) return NULL;
+	DasUnits units = DasAry_units(pAry);
+	double factor = DasUnits_convert(1.0, units, DASUNITS_SECONDS);
+	if(factor == DASVAL_FILL) return NULL;
 	factor *= 1.0e+9;
 
-	size_t uLen;
-	das_val_type vt = DasAry_valType(pAry);
-	const void* pMem = DasAry_getIn(pAry, vt, DIM0, &uLen);
+	ptrdiff_t nLen = 0;
+	das_vt vt = DasAry_vt(pAry);
+	const void* pMem = DasAry_valsIn(pAry, vt, DAS_ADDR0, &nLen);
+	if(nLen < 0) return pyd2_setException(g_pPyD2Error);
+	size_t uLen = (size_t)nLen;
 
 	/* Create a Numpy Array descriptor that says we're going to use nanoseconds
 	 * for the meaning of the stored int8_t values */
@@ -288,7 +302,7 @@ PyObject* _DasTimeAryToNumpyAry(DasAry* pAry)
 	}
 
 	/* Type branch to keep inner loops small */
-	const ubyte* pUByte; const int8_t* pByte; 
+	const uint8_t* pUByte; const int8_t* pByte; 
 	const int16_t* pShort; const uint16_t* pUShort;
 	const uint32_t* pUInt; const int32_t* pInt; 
 	const uint64_t* pULong; const int64_t* pLong;  
@@ -300,64 +314,64 @@ PyObject* _DasTimeAryToNumpyAry(DasAry* pAry)
 
 	size_t u = 0;
 	switch(vt){
-	case vtUByte:
-		for(pUByte = (const ubyte*)pMem, u = 0; u < uLen; ++u, ++pUByte, ++pNdData) {
+	case DASVT_UBYTE:
+		for(pUByte = (const uint8_t*)pMem, u = 0; u < uLen; ++u, ++pUByte, ++pNdData) {
 			*pNdData = (long int)((*pUByte)*factor);
 		}
 		break;
-	case vtByte:
+	case DASVT_BYTE:
 		for(pByte = (const int8_t*)pMem, u = 0; u < uLen; ++u, ++pByte, ++pNdData) {
 			*pNdData = (long int)((*pByte)*factor);
 		}
 		break;
-	case vtShort:
+	case DASVT_SHORT:
 		for(pShort = (const int16_t*)pMem, u = 0; u < uLen; ++u, ++pShort, ++pNdData) {
 			*pNdData = (long int)((*pShort)*factor);
 		}
 		break;
-	case vtUShort:
+	case DASVT_USHORT:
 		for(pUShort = (const uint16_t*)pMem, u = 0; u < uLen; ++u, ++pUShort, ++pNdData) {
 			*pNdData = (long int)((*pUShort)*factor);
 		}
 		break;
-	case vtUInt:
+	case DASVT_UINT:
 		for(pUInt = (const uint32_t*)pMem, u = 0; u < uLen; ++u, ++pUInt, ++pNdData) {
 			*pNdData = (long int)((*pUInt)*factor);
 		}
 		break;
-	case vtInt:
+	case DASVT_INT:
 		for(pInt = (const int32_t*)pMem, u = 0; u < uLen; ++u, ++pInt, ++pNdData) {
 			*pNdData = (long int)((*pInt)*factor);
 		}
 		break;
-	case vtULong:
+	case DASVT_ULONG:
 		for(pULong = (const uint64_t*)pMem, u = 0; u < uLen; ++u, ++pULong, ++pNdData) {
 			*pNdData = (long int)((*pULong)*factor);
 		}
 		break;
-	case vtLong:
+	case DASVT_LONG:
 		for(pLong = (const int64_t*)pMem, u = 0; u < uLen; ++u, ++pLong, ++pNdData) {
 			*pNdData = (long int)((*pLong)*factor);
 		}
 		break;
-	case vtFloat:
+	case DASVT_FLOAT:
 		/* Problem for time deltas!  The common fill value -1e31 is less than
 		 * minimum possible long int!  We need to convert these fill values to
 		 * something that is possible. */
 		for(pFloat = (const float*)pMem, u = 0; u < uLen; ++u, ++pFloat, ++pNdData) {
 			fTmp = (float) ((*pFloat) * factor);
 			if((fTmp < LONG_MIN)||(fTmp > LONG_MAX))
-				*pNdData = DAS_INT64_FILL;
+				*pNdData = DASVAL_FILL_INT64;
 			else
 				*pNdData = (long int)(fTmp);
 		}
 		break;
-	case vtDouble:
+	case DASVT_DOUBLE:
 		/* See fill value problem above */
 		for(pDbl = (const double*)pMem, u = 0; u < uLen; ++u, ++pDbl, ++pNdData) {
 			dTmp = (*pDbl)*factor;
 			if((dTmp < LONG_MIN)||(dTmp > LONG_MAX))
-				*pNdData = DAS_INT64_FILL;
+				*pNdData = DASVAL_FILL_INT64;
 			else
 				*pNdData = (long int)(dTmp);
 		}
@@ -384,14 +398,14 @@ PyObject* _DasTimeAryToNumpyAry(DasAry* pAry)
 
 PyObject* _DasTextAryToNumpyAry(DasAry* pAry)
 {
-	das_val_type vt = DasAry_valType(pAry);
+	das_vt vt = DasAry_vt(pAry);
 
-	/* Das2 vtText type is used for arrays of constant pointers to null
+	/* Das2 DASVT_TEXT type is used for arrays of constant pointers to null
 	 * terminated strings.  Since there's so many things that can go wrong
 	 * with not owning your own memory, I don't use it much, but it does
-	 * exist.  vtByte is much more common */
+	 * exist.  DASVT_BYTE is much more common */
 
-	if((vt != vtText)&&(vt != vtByte)){
+	if((vt != DASVT_TEXT)&&(vt != DASVT_BYTE)){
 		PyErr_Format(g_pPyD2Error, "Logic error in %s,%d", __FILE__, __LINE__);
 		return NULL;
 	}
@@ -400,13 +414,13 @@ PyObject* _DasTextAryToNumpyAry(DasAry* pAry)
 	int nRank = DasAry_shape(pAry, shape);
 	int nAsRank = nRank;
 
-	if(vt == vtByte) nAsRank = nRank - 1; /* For these arrays, last index is
+	if(vt == DASVT_BYTE) nAsRank = nRank - 1; /* For these arrays, last index is
 													   * just the character count */
 
-	/* Make sure we aren't ragged (except for the last dimension of vtByte
+	/* Make sure we aren't ragged (except for the last dimension of DASVT_BYTE
 	 * arrays of coarse. */
 	for(int d = 0; d < nAsRank; ++d){
-		if(shape[d] == VARIDX_RAGGED){
+		if(shape[d] == DASIDX_RAGGED){
 			PyErr_Format(g_pPyD2Error, "Ragged array translation is not yet implemented");
 			return NULL;
 		}
@@ -434,7 +448,7 @@ PyObject* _DasTextAryToNumpyAry(DasAry* pAry)
 
 	/* We have to do formal multidimensional iteration instead of just getting
 	 * the memory pointer and doing a flat iteration because the strings in
-	 * vtByte could contain many nulls in a row. There's no guaruntee that each
+	 * DASVT_BYTE could contain many nulls in a row. There's no guaruntee that each
 	 * string has only a single null at the end. */
 	npy_intp np_index[16] = {0};
 	ptrdiff_t d2_index[16] = {0};
@@ -443,13 +457,18 @@ PyObject* _DasTextAryToNumpyAry(DasAry* pAry)
 	const char* sStr = NULL;
 	PyObject** ppSet = NULL;
 	PyObject* pStr = NULL;
-	size_t uStrLen = 0;
+	ptrdiff_t nStrLen = 0;
 
 	bool bNext = (DasAry_size(pAry) > 0);
 	while(bNext){
-		pItem = DasAry_getIn(pAry, vt, nAsRank, (ptrdiff_t*)d2_index, &uStrLen);
+		pItem = DasAry_valsIn(pAry, vt, nAsRank, (ptrdiff_t*)d2_index, &nStrLen);
+		if(nStrLen < 0){
+			Py_DECREF(pNdAry);  /* frees the strings already set in it */
+			return pyd2_setException(g_pPyD2Error);
+		}
 
-		if(vt == vtText) sStr = *( (const char**) pItem);
+		if(pItem == NULL) sStr = NULL;  /* an empty ragged row */
+		else if(vt == DASVT_TEXT) sStr = *( (const char**) pItem);
 		else sStr = (const char*) pItem;
 
 		ppSet = (PyObject**) PyArray_GetPtr(pNdAry, np_index);
@@ -497,18 +516,18 @@ static PyObject* _DasGenericAryToNumpyAry(DasAry* pAry)
 
 	/* Assume check in higher level function for raggedness */
 	int nType = 0;
-	das_val_type et = DasAry_valType(pAry);
+	das_vt et = DasAry_vt(pAry);
 	switch(et){
-	case vtUByte:  nType = NPY_UINT8; break;
-	case vtByte:   nType = NPY_INT8; break;
-	case vtUShort: nType = NPY_UINT16; break;
-	case vtShort:  nType = NPY_INT16; break;
-	case vtUInt:   nType = NPY_UINT32; break;
-	case vtInt:    nType = NPY_INT32; break;
-	case vtULong:  nType = NPY_UINT64; break;
-	case vtLong:   nType = NPY_INT64; break;
-	case vtFloat:  nType = NPY_FLOAT32; break;
-	case vtDouble: nType = NPY_FLOAT64; break;
+	case DASVT_UBYTE:  nType = NPY_UINT8; break;
+	case DASVT_BYTE:   nType = NPY_INT8; break;
+	case DASVT_USHORT: nType = NPY_UINT16; break;
+	case DASVT_SHORT:  nType = NPY_INT16; break;
+	case DASVT_UINT:   nType = NPY_UINT32; break;
+	case DASVT_INT:    nType = NPY_INT32; break;
+	case DASVT_ULONG:  nType = NPY_UINT64; break;
+	case DASVT_LONG:   nType = NPY_INT64; break;
+	case DASVT_FLOAT:  nType = NPY_FLOAT32; break;
+	case DASVT_DOUBLE: nType = NPY_FLOAT64; break;
 	default:
 		/* Can't handle unknown types for now, could return these as just byte */
 		/* blobs to python in the future, might be handy for telemetry */
@@ -519,7 +538,7 @@ static PyObject* _DasGenericAryToNumpyAry(DasAry* pAry)
 	/* Make sure das2 arrays don't delete their data when free'ed */
 	size_t uLen = 0;
 	size_t uOffset = 0;
-	ubyte* pMem = DasAry_disownElements(pAry, &uLen, &uOffset);
+	uint8_t* pMem = DasAry_disownData(pAry, &uLen, &uOffset);
 	PyObject* pNdAry = NULL;
 	
 	if(uLen != 0){
@@ -528,7 +547,7 @@ static PyObject* _DasGenericAryToNumpyAry(DasAry* pAry)
 			return NULL;
 		}
 		if(uOffset > 0){
-			PyErr_Format(g_pPyD2Error, "Array %s has head trim, update das2py",sInfo);
+			PyErr_Format(g_pPyD2Error, "Array %s has head trim, update das3py",sInfo);
 			free(pMem);  /* You owned it, so clean it up */
 			return NULL;
 		}
@@ -554,7 +573,7 @@ static PyObject* _DasGenericAryToNumpyAry(DasAry* pAry)
 /* Note that DasAry is more flexible in one respect in that all it's
  * dimensions can be ragged.  Since ndarrays allow for masks we can get around
  * numpy's limitation by making a cubic array and giving it a mask.  For now
- * I'm just not supporting ragged arrays (except of vtByte arrays that store
+ * I'm just not supporting ragged arrays (except of DASVT_BYTE arrays that store
  * strings) since das 2.2 streams don't have them anyway.
  *
  * * TODO: Handling mask creation for ragged arrays
@@ -567,25 +586,25 @@ static PyObject* _DasGenericAryToNumpyAry(DasAry* pAry)
  *  2. If the units of the array are convertible to seconds (no mater the
  *     data type), output an array of numpy timedelta64 objects.
  *
- *  3. If the type of the array is vtText (no matter the units), or if the type
- *     is vtByte and the flag D2ARY_AS_STRING is set, output a python string
+ *  3. If the type of the array is DASVT_TEXT (no matter the units), or if the type
+ *     is DASVT_BYTE and the flag DASARY_AS_STRING is set, output a python string
  *     object array
  *
  *  4. Otherwise output a generic C-aligned basic type array
  */
 static PyObject* _DasAryToNumpyAry(DasAry* pAry)
 {
-	das_units units = DasAry_units(pAry);
-	das_val_type vt = DasAry_valType(pAry);
+	DasUnits units = DasAry_units(pAry);
+	das_vt vt = DasAry_vt(pAry);
 
-	if((vt == vtTime) || Units_haveCalRep(units))
+	if((vt == DASVT_TIME) || DasUnits_isTimePoint(units))
 		return _DasCalAryToNumpyAry(pAry);
 
-	if(Units_canConvert(units, UNIT_SECONDS))
+	if(DasUnits_canConvert(units, DASUNITS_SECONDS))
 		return _DasTimeAryToNumpyAry(pAry);
 
-	unsigned int uFlags = DasAry_getUsage(pAry);
-	if((vt == vtText) || ( (uFlags&D2ARY_AS_STRING) == D2ARY_AS_STRING) )
+	unsigned int uFlags = DasAry_usage(pAry);
+	if((vt == DASVT_TEXT) || ( (uFlags&DASARY_AS_STRING) == DASARY_AS_STRING) )
 		return _DasTextAryToNumpyAry(pAry);
 
 	return _DasGenericAryToNumpyAry(pAry);
@@ -593,55 +612,55 @@ static PyObject* _DasAryToNumpyAry(DasAry* pAry)
 
 /* ************************************************************************* */
 /* Create python fill values from array fill values                          */
-/* Note that the canonical DAS_FILL_VALUE only works for floating point      */
+/* Note that the canonical DASVAL_FILL only works for floating point      */
 /* types.  If array is to be converted to a timedelta64 or datetime64 we     */
 /* need to substitute fill values than are in range                          */
 
 static PyObject* _DasAryFillToObj(DasAry* pAry)
 {
-	das_val_type vt = DasAry_valType(pAry);
-	das_units    units = DasAry_units(pAry);
-	const void* vpFill = DasAry_getFill(pAry);
+	das_vt vt = DasAry_vt(pAry);
+	DasUnits    units = DasAry_units(pAry);
+	const void* vpFill = DasAry_fill(pAry);
 
 	int64_t nFill = 0;
 	double  rFill = 0.0;
 
 	switch(vt){
-	case vtUByte:  nFill = *((ubyte*)vpFill);    break;
-	case vtByte:   nFill = *((int8_t*)vpFill);   break;
-	case vtUShort: nFill = *((uint16_t*)vpFill); break;
-	case vtShort:  nFill = *((int16_t*)vpFill);  break;
-	case vtUInt:   nFill = *((uint32_t*)vpFill); break;
-	case vtInt:    nFill = *((int32_t*)vpFill);  break;
-	case vtULong:  nFill = *((uint64_t*)vpFill); break;
-	case vtLong:   nFill = *((int64_t*)vpFill);  break;
-	case vtFloat:  rFill = *((float*)vpFill);    break;
-	case vtDouble: rFill = *((double*)vpFill);   break;
-	case vtTime:  /* TODO: Handle fill value for das_time objects */
-	case vtText:
+	case DASVT_UBYTE:  nFill = *((uint8_t*)vpFill);    break;
+	case DASVT_BYTE:   nFill = *((int8_t*)vpFill);   break;
+	case DASVT_USHORT: nFill = *((uint16_t*)vpFill); break;
+	case DASVT_SHORT:  nFill = *((int16_t*)vpFill);  break;
+	case DASVT_UINT:   nFill = *((uint32_t*)vpFill); break;
+	case DASVT_INT:    nFill = *((int32_t*)vpFill);  break;
+	case DASVT_ULONG:  nFill = *((uint64_t*)vpFill); break;
+	case DASVT_LONG:   nFill = *((int64_t*)vpFill);  break;
+	case DASVT_FLOAT:  rFill = *((float*)vpFill);    break;
+	case DASVT_DOUBLE: rFill = *((double*)vpFill);   break;
+	case DASVT_TIME:  /* TODO: Handle fill value for DasTime objects */
+	case DASVT_TEXT:
 		Py_INCREF(Py_None);
 		return Py_None;
 		break;
 	default:
 		/* Can't handle unknown types for now.  Would need a size call back */
 		PyErr_Format(g_pPyD2Error, "Code logic error will setting fill value for "
-				       "array %s", pAry->sId);
+				       "array %s", DasAry_id(pAry));
 		return NULL;
 	}
 	
 	/* This compliments code in _DasTimeAryToNumpyAry above.
 	 * That function sets any values outside of LONG_MIN, LONG_MAX to 
-	 * DAS_INT64_FILL, which is almost always what you want.
+	 * DASVAL_FILL_INT64, which is almost always what you want.
 	 * 
 	 * The fill value itself is scaled to nanoseconds as needed.
 	 */
 	double factor = 1.0;
-	if(Units_haveCalRep(units) || Units_canConvert(units, UNIT_SECONDS)){
+	if(DasUnits_isTimePoint(units) || DasUnits_canConvert(units, DASUNITS_SECONDS)){
 		
 		/* Get the conversion factor to nanoseconds */
-		if(Units_canConvert(units, UNIT_SECONDS)){
-			factor = Units_convertTo(UNIT_SECONDS, 1.0, units);
-			if(factor == DAS_FILL_VALUE){
+		if(DasUnits_canConvert(units, DASUNITS_SECONDS)){
+			factor = DasUnits_convert(1.0, units, DASUNITS_SECONDS);
+			if(factor == DASVAL_FILL){
 				Py_INCREF(Py_None);
 				return Py_None;
 			}
@@ -649,22 +668,22 @@ static PyObject* _DasAryFillToObj(DasAry* pAry)
 		}
 		/* TODO: Handle FILL for calendar time objects */
 		
-		if((vt == vtDouble)||(vt == vtFloat)){
+		if((vt == DASVT_DOUBLE)||(vt == DASVT_FLOAT)){
 			if((rFill*factor < LONG_MIN)||(rFill*factor > LONG_MAX))
-				return PyLong_FromInt64(DAS_INT64_FILL);
+				return PyLong_FromInt64(DASVAL_FILL_INT64);
 			else
 				return PyLong_FromInt64((int64_t)(rFill*factor));
 		}	
 		else{
 			if((nFill*factor < LONG_MIN)||(nFill*factor > LONG_MAX)){
-				return PyLong_FromInt64(DAS_INT64_FILL);
+				return PyLong_FromInt64(DASVAL_FILL_INT64);
 			}
 			else
 				return PyLong_FromInt64((int64_t)(nFill*factor));
 		}
 	}
 	else{
-		if((vt == vtDouble)||(vt == vtFloat))
+		if((vt == DASVT_DOUBLE)||(vt == DASVT_FLOAT))
 			return PyFloat_FromDouble(rFill);
 		else
 			return PyLong_FromInt64(nFill);
@@ -680,16 +699,17 @@ static PyObject* _props2PyDict(DasDesc* pDesc)
 	PyObject* pDict = PyDict_New();
 	PyObject* pTup;
 
-	size_t uProps = DasDesc_length(pDesc);
+	size_t uProps = DasDesc_numProps(pDesc);
 	for(size_t u = 0; u < uProps; ++u){
 
-		const DasProp* pProp = DasDesc_getPropByIdx(pDesc, u);
+		const DasProp* pProp = DasDesc_propAt(pDesc, u);
 		if(pProp == NULL) continue;  /* Unlikely, but possible */
 
-		if((pProp->units == NULL)||(pProp->units[0] == '\0'))
+		DasUnits units = DasProp_units(pProp);
+		if((units == NULL)||(units[0] == '\0'))
 			sUnits = "";
 		else
-			sUnits = pProp->units;
+			sUnits = units;
 		/* A one character string, not a pointer at a lone char: PyString reads
 		 * to the NUL, and a bare char on the stack has none after it. */
 		char sSep[2] = {DasProp_sep(pProp), '\0'};
@@ -743,20 +763,20 @@ static const char* g_sFormParams[] = {
 
 /* Booleans are the only parameter das2C hands back decoded (as "true" or
  * "false"), everything else keeps its wire spelling. */
-static PyObject* _formParam2Py(const char* sVal, ubyte uType)
+static PyObject* _formParam2Py(const char* sVal, uint8_t uType)
 {
 	if((uType & DASPROP_TYPE_MASK) == DASPROP_BOOL)
 		return PyBool_FromLong(strcmp(sVal, "true") == 0);
 	return PyString_FromString(sVal);
 }
 
-/* das_vt_toStr() answers NULL for a type it has no arm for, which as of
- * das2C 65fb971 includes vtComposite.  Never hand that to PyString. */
-static const char* _valTypeStr(das_val_type vt)
+/* dasvt_name() answers NULL for a type it has no arm for, which as of
+ * das2C 65fb971 includes DASVT_COMP.  Never hand that to PyString. */
+static const char* _valTypeStr(das_vt vt)
 {
-	const char* sType = das_vt_toStr(vt);
+	const char* sType = dasvt_name(vt);
 	if(sType != NULL) return sType;
-	return (vt == vtComposite) ? "composite" : "unknown";
+	return (vt == DASVT_COMP) ? "composite" : "unknown";
 }
 
 /* The backing array's id, or None for a computed variable (a sequence, a
@@ -764,9 +784,9 @@ static const char* _valTypeStr(das_val_type vt)
  * key; the expression string is for people. */
 static PyObject* _varArrayId2Py(const DasVar* pVar)
 {
-	const DasAry* pAry = DasVar_getAry(pVar);
+	const DasAry* pAry = DasVar_ary(pVar);
 	if(pAry == NULL) Py_RETURN_NONE;
-	return PyString_FromString(pAry->sId);
+	return PyString_FromString(DasAry_id(pAry));
 }
 
 /* External index -> array index, one entry per dataset index, None where
@@ -774,7 +794,7 @@ static PyObject* _varArrayId2Py(const DasVar* pVar)
  * map; everything else answers None so callers can test one key. */
 static PyObject* _varIdxMap2PyList(const DasVar* pVar, int nDsRank)
 {
-	int8_t aMap[VARIDX_MAX];
+	int8_t aMap[DASIDX_MAX];
 	int nExtRank = DasVar_idxMap(pVar, aMap);
 	if(nExtRank < 0) Py_RETURN_NONE;
 
@@ -783,7 +803,7 @@ static PyObject* _varIdxMap2PyList(const DasVar* pVar, int nDsRank)
 
 	for(int i = 0; i < nDsRank; ++i){
 		PyObject* pItem = NULL;
-		if((i >= nExtRank)||(aMap[i] == VARIDX_UNUSED)){
+		if((i >= nExtRank)||(aMap[i] == DASIDX_UNUSED)){
 			Py_INCREF(Py_None); pItem = Py_None;
 		}
 		else{
@@ -809,9 +829,9 @@ static bool _materialize(
 	const DasDs* pDs, const DasDim* pDim, const char* sRole, const DasVar* pVar,
 	PyObject* pVarDict, PyObject* pdArys, PyObject* pdFill
 ){
-	ptrdiff_t aShape[VARIDX_MAX] = {0};
-	ptrdiff_t aMin[VARIDX_MAX] = {0};
-	ptrdiff_t aMax[VARIDX_MAX] = {0};
+	ptrdiff_t aShape[DASIDX_MAX] = {0};
+	ptrdiff_t aMin[DASIDX_MAX] = {0};
+	ptrdiff_t aMax[DASIDX_MAX] = {0};
 	int nRank = DasDs_shape(pDs, aShape);
 
 	PyObject* pIdxMap = PyList_New(nRank);
@@ -820,7 +840,7 @@ static bool _materialize(
 	int nMapped = 0;
 	for(int i = 0; i < nRank; ++i){
 		PyObject* pItem = NULL;
-		if(DasVar_degenerate(pVar, i)){
+		if(DasVar_isDegenerate(pVar, i)){
 			aMax[i] = 1;
 			Py_INCREF(Py_None); pItem = Py_None;
 		}
@@ -834,7 +854,7 @@ static bool _materialize(
 
 	/* materialize, not subset: the numeric converter below hands the
 	 * element memory to numpy and needs the array to own it outright */
-	DasAry* pAry = DasVar_materialize(pVar, nRank, aMin, aMax, NULL);
+	DasAry* pAry = new_DasAry_materialize(pVar, nRank, aMin, aMax, NULL);
 	if(pAry == NULL){
 		Py_DECREF(pIdxMap);
 		pyd2_setException(g_pPyD2Error);
@@ -863,10 +883,10 @@ static bool _materialize(
 
 	PyObject* pCompact = pNd;
 	if(bDsShaped && (nMapped < nRank)){
-		npy_intp aDims[2*VARIDX_MAX] = {0};
+		npy_intp aDims[2*DASIDX_MAX] = {0};
 		PyArray_Dims newDims = {aDims, 0};
 		for(int i = 0; i < nNd; ++i){
-			if((i < nRank) && DasVar_degenerate(pVar, i)) continue;
+			if((i < nRank) && DasVar_isDegenerate(pVar, i)) continue;
 			aDims[newDims.len++] = pNdDims[i];
 		}
 		if(newDims.len == 0){ aDims[0] = 1; newDims.len = 1; }  /* a lone constant */
@@ -877,7 +897,7 @@ static bool _materialize(
 	}
 
 	char sAryId[256] = {'\0'};
-	snprintf(sAryId, 255, "%s.%s", pDim->sId, sRole);
+	snprintf(sAryId, 255, "%s.%s", DasDim_name(pDim), sRole);
 
 	bool bOkay =
 		_setDictItem(pdArys,   sAryId,   pCompact) &&
@@ -885,6 +905,221 @@ static bool _materialize(
 		_setDictItem(pVarDict, "array",  PyString_FromString(sAryId)) &&
 		_setDictItem(pVarDict, "idxmap", pIdxMap);
 	return bOkay;
+}
+
+/* ************************************************************************* */
+/* Summaries of what das2py hands back, not of what das2C read               */
+/*                                                                           */
+/* DasVar_toStr() and DasDs_info() describe das2C's variables.  By the time  */
+/* a dataset reaches python das2py has changed some of them:                 */
+/*                                                                           */
+/*   - Time points are datetime64[ns] and durations timedelta64[ns], so      */
+/*     int64 in ns1970 or ns, see _DasAryToNumpyAry().                       */
+/*   - Sequences and constants are arrays named <dim>.<role>, see            */
+/*     _materialize().                                                       */
+/*                                                                           */
+/* The summaries are rewritten to match, and the das2C objects are left      */
+/* alone.  The v3.0 summary formats are a stable interface, which is what    */
+/* makes editing them sound; text that doesn't parse as v3.0 is an error     */
+/* rather than being passed through mislabeled.                              */
+
+#if PY_MAJOR_VERSION >= 3
+#define _pyd2_utf8(o) PyUnicode_AsUTF8(o)
+#else
+#define _pyd2_utf8(o) PyString_AsString(o)
+#endif
+
+/* The units a variable's values have once in numpy, or NULL when das2py
+ * leaves them as read.  The tests mirror _DasAryToNumpyAry(). */
+static DasUnits _pyd2_npUnits(const DasVar* pVar)
+{
+	DasUnits units = DasVar_units(pVar);
+	if((DasVar_vt(pVar) == DASVT_TIME) || DasUnits_isTimePoint(units))
+		return DasUnits_fromStr("ns1970");
+	if(DasUnits_canConvert(units, DASUNITS_SECONDS))
+		return DasUnits_fromStr("ns");
+	return NULL;
+}
+
+/* The element name as DasVar_toStr() prints it */
+static const char* _pyd2_elemName(const DasVar* pVar)
+{
+	das_et et = DasVar_et(pVar);
+	const char* sElem = (et == DASET_TIME) ? "time" : dasvt_name((das_vt)et);
+	return (sElem != NULL) ? sElem : "unknown";
+}
+
+/* The v3.0 one line summary, "<generator> <element> [<units>] | <shape> |
+ * <formalism>", with the element and units changed to what numpy holds.  A
+ * materialized variable gets its synthesized array as the generator, with
+ * one index letter per entry in the shape section, which lists the same
+ * axes in the same order as the compacted ndarray. */
+static PyObject* _pyd2_varExpr(
+	const DasDim* pDim, const char* sRole, const DasVar* pVar, bool bMaterial
+){
+	char sOrig[DASVAR_STR_SZ] = {'\0'};  /* always holds the whole line */
+	DasVar_toStr(pVar, sOrig, sizeof(sOrig));
+
+	const char* pSec2 = strstr(sOrig, " | ");
+	DasUnits units = DasVar_units(pVar);
+	const char* sUnits = (units != NULL) ? units : "";
+	const char* sElem  = _pyd2_elemName(pVar);
+
+	char sTail[256] = {'\0'};
+	if(sUnits[0] != '\0') snprintf(sTail, sizeof(sTail), " %s %s", sElem, sUnits);
+	else                  snprintf(sTail, sizeof(sTail), " %s", sElem);
+
+	size_t uSec1 = (pSec2 != NULL) ? (size_t)(pSec2 - sOrig) : 0;
+	size_t uTail = strlen(sTail);
+	if((pSec2 == NULL) || (uTail > uSec1) ||
+	   (strncmp(sOrig + uSec1 - uTail, sTail, uTail) != 0))
+		return PyErr_Format(g_pPyD2Error,
+			"Summary of variable %s:%s is not in the das v3.0 format: '%s'",
+			DasDim_name(pDim), sRole, sOrig
+		);
+	pSec2 += 3;
+
+	DasUnits npUnits = _pyd2_npUnits(pVar);
+	if(npUnits != NULL){
+		sElem  = dasvt_name(DASVT_LONG);  /* both numpy time types are int64 */
+		sUnits = npUnits;
+	}
+
+	char sGen[512] = {'\0'};
+	if(bMaterial){
+		int n = snprintf(sGen, sizeof(sGen), "%s.%s", DasDim_name(pDim), sRole);
+		const char* pEnd = strstr(pSec2, " | ");
+		if(pEnd == NULL) pEnd = pSec2 + strlen(pSec2);
+		for(const char* p = pSec2; (p < pEnd) && (n < (int)sizeof(sGen) - 4); ++p){
+			if((p[1] == ':') && ((p == pSec2) || (p[-1] == ' ')))
+				n += snprintf(sGen + n, sizeof(sGen) - n, "[%c]", *p);
+		}
+	}
+	else{
+		size_t uGen = uSec1 - uTail;
+		if(uGen >= sizeof(sGen)) uGen = sizeof(sGen) - 1;
+		memcpy(sGen, sOrig, uGen);
+		sGen[uGen] = '\0';
+	}
+
+	char sOut[5120] = {'\0'};
+	if(sUnits[0] != '\0')
+		snprintf(sOut, sizeof(sOut), "%s %s %s | %s", sGen, sElem, sUnits, pSec2);
+	else
+		snprintf(sOut, sizeof(sOut), "%s %s | %s", sGen, sElem, pSec2);
+
+	return PyString_FromString(sOut);
+}
+
+/* A growable string for the rewritten dataset info */
+typedef struct { char* p; size_t uLen; size_t uCap; } _pyd2_strbuf;
+
+static bool _pyd2_sbAdd(_pyd2_strbuf* pSb, const char* s, size_t u)
+{
+	if(pSb->uLen + u + 1 > pSb->uCap){
+		size_t uCap = 2*(pSb->uLen + u + 1);
+		char* p = (char*)realloc(pSb->p, uCap);
+		if(p == NULL) return false;
+		pSb->p = p;
+		pSb->uCap = uCap;
+	}
+	memcpy(pSb->p + pSb->uLen, s, u);
+	pSb->uLen += u;
+	pSb->p[pSb->uLen] = '\0';
+	return true;
+}
+
+/* DasDs_info() with each "Var: <role> | <summary>" line taken from the
+ * 'expression' that das2py put in that variable's dict, so the info string
+ * says what python got.  Every other line is passed through.  Lines are
+ * matched to dicts by the dimension header above them: "<Coordinate|Data>
+ * Dimension: <name> (<physDim>)" */
+static PyObject* _pyd2_dsInfo(
+	const DasDs* pDs, PyObject* pCoordDict, PyObject* pDataDict
+){
+	int nInfo = DasDs_info(pDs, NULL, 0);
+	char* sInfo = (nInfo >= 0) ? (char*)calloc(nInfo + 1, sizeof(char)) : NULL;
+	if(sInfo == NULL) return PyErr_NoMemory();
+	DasDs_info(pDs, sInfo, nInfo + 1);
+
+	_pyd2_strbuf sb = {NULL, 0, 0};
+	PyObject* pDim = NULL;   /* borrowed, dict of the dimension being listed */
+	const char* sBad = NULL;
+	const char* pLine = sInfo;
+
+	while((*pLine != '\0') && (sBad == NULL)){
+		const char* pEol = strchr(pLine, '\n');
+		size_t uLine = (pEol != NULL) ? (size_t)(pEol - pLine + 1) : strlen(pLine);
+		const char* p = pLine;
+		while(*p == ' ') ++p;
+
+		PyObject* pDict = NULL;
+		const char* pName = NULL;
+		if(strncmp(p, "Coordinate Dimension: ", 22) == 0){
+			pDict = pCoordDict; pName = p + 22;
+		}
+		else if(strncmp(p, "Data Dimension: ", 16) == 0){
+			pDict = pDataDict;  pName = p + 16;
+		}
+
+		if(pName != NULL){
+			const char* pParen = strstr(pName, " (");
+			char sName[256] = {'\0'};
+			if((pParen == NULL) || ((size_t)(pParen - pName) >= sizeof(sName))){
+				sBad = "dimension header"; break;
+			}
+			memcpy(sName, pName, pParen - pName);
+			pDim = PyDict_GetItemString(pDict, sName);
+			if(pDim == NULL){ sBad = "dimension name"; break; }
+		}
+		else if(strncmp(p, "Var: ", 5) == 0){
+			const char* pRole = p + 5;
+			const char* pBar = strstr(pRole, " | ");
+			const char* pSp  = strchr(pRole, ' ');
+			char sRole[64] = {'\0'};
+			if((pBar == NULL) || (pSp == NULL) || (pDim == NULL) ||
+			   ((pEol != NULL) && (pBar > pEol)) ||
+			   ((size_t)(pSp - pRole) >= sizeof(sRole))){
+				sBad = "variable line"; break;
+			}
+			memcpy(sRole, pRole, pSp - pRole);
+
+			PyObject* pVar  = PyDict_GetItemString(pDim, sRole);
+			PyObject* pExpr = pVar ? PyDict_GetItemString(pVar, "expression") : NULL;
+			const char* sExpr = pExpr ? _pyd2_utf8(pExpr) : NULL;
+			if(sExpr == NULL){ sBad = "variable role"; break; }
+
+			if(!_pyd2_sbAdd(&sb, pLine, (pBar + 3) - pLine) ||
+			   !_pyd2_sbAdd(&sb, sExpr, strlen(sExpr)) ||
+			   ((pEol != NULL) && !_pyd2_sbAdd(&sb, "\n", 1))){
+				free(sb.p); free(sInfo);
+				return PyErr_NoMemory();
+			}
+			pLine += uLine;
+			continue;
+		}
+
+		if(!_pyd2_sbAdd(&sb, pLine, uLine)){
+			free(sb.p); free(sInfo);
+			return PyErr_NoMemory();
+		}
+		pLine += uLine;
+	}
+
+	PyObject* pRet = NULL;
+	if(sBad != NULL){
+		PyErr_Clear();  /* a failed UTF-8 fetch may have set one */
+		PyErr_Format(g_pPyD2Error,
+			"Dataset %s info is not in the das v3.0 format, unexpected %s at: "
+			"'%.80s'", DasDs_name(pDs), sBad, pLine
+		);
+	}
+	else{
+		pRet = PyString_FromString(sb.p ? sb.p : "");
+	}
+	free(sb.p);
+	free(sInfo);
+	return pRet;
 }
 
 /* {'kind': token, param: value, ...} for a variable's formalism, or None when
@@ -899,18 +1134,24 @@ static PyObject* _form2PyDict(const DasVar* pVar)
 	if(pOps == NULL) return NULL;
 
 	bool bOkay = true;
-	if(DasForm_isKind(pForm, DAS_FORM_EXT)){
-		bOkay = _setDictItem(pOps, "kind", PyString_FromString(DasFormGeneric_kind(pForm)));
-		const char* sName = NULL;
-		const char* sVal = NULL;
-		for(int i = 0; bOkay && DasFormGeneric_paramAt(pForm, i, &sName, &sVal); ++i)
-			bOkay = _setDictItem(pOps, sName, PyString_FromString(sVal));
+	/* For an unknown kind DasForm_kind() is the name as it arrived */
+	bOkay = _setDictItem(pOps, "kind", PyString_FromString(DasForm_kind(pForm)));
+	if(DasForm_isKind(pForm, DASFORM_EXT)){
+		/* Every parameter of an unknown kind is a string, das2C can't know
+		   better, so walk them all rather than the known list below */
+		int nParams = DasForm_numParams(pForm);
+		for(int i = 0; bOkay && (i < nParams); ++i){
+			DasFormParamBuf buf;
+			const DasProp* pParam = DasForm_paramAt(pForm, i, &buf);
+			if(pParam == NULL) break;
+			bOkay = _setDictItem(pOps, DasProp_name(pParam),
+				PyString_FromString(DasProp_value(pParam)));
+		}
 	}
 	else{
-		bOkay = _setDictItem(pOps, "kind", PyString_FromString(DasForm_kindStr(pForm)));
 		for(int i = 0; bOkay && (g_sFormParams[i] != NULL); ++i){
-			ubyte uType = 0;
-			const char* sVal = DasForm_getParam(pForm, g_sFormParams[i], &uType);
+			uint8_t uType = 0;
+			const char* sVal = DasForm_param(pForm, g_sFormParams[i], &uType);
 			if(sVal == NULL) continue;
 			bOkay = _setDictItem(pOps, g_sFormParams[i], _formParam2Py(sVal, uType));
 		}
@@ -924,7 +1165,7 @@ static PyObject* _form2PyDict(const DasVar* pVar)
  * variable length string) is None, since its extent is per value. */
 static PyObject* _intrShape2PyList(const DasVar* pVar)
 {
-	ptrdiff_t aIntr[VARIDX_MAX] = {0};
+	ptrdiff_t aIntr[DASIDX_MAX] = {0};
 	int nIntrRank = DasVar_intrShape(pVar, aIntr);
 
 	PyObject* pList = PyList_New(nIntrRank);
@@ -932,7 +1173,7 @@ static PyObject* _intrShape2PyList(const DasVar* pVar)
 
 	for(int i = 0; i < nIntrRank; ++i){
 		PyObject* pItem = NULL;
-		if(aIntr[i] == VARIDX_RAGGED){ Py_INCREF(Py_None); pItem = Py_None; }
+		if(aIntr[i] == DASIDX_RAGGED){ Py_INCREF(Py_None); pItem = Py_None; }
 		else pItem = PyLong_FromInt64(aIntr[i]);
 		if(pItem == NULL){ Py_DECREF(pList); return NULL; }
 		PyList_SET_ITEM(pList, i, pItem);  /* steals the reference */
@@ -947,8 +1188,8 @@ static PyObject* _intrShape2PyList(const DasVar* pVar)
 static PyObject* _compLabels2PyList(const DasVar* pVar)
 {
 	long nComp = 1;
-	if(strcmp(DasVar_serialType(pVar), "composite") == 0){
-		ptrdiff_t aIntr[VARIDX_MAX] = {0};
+	if(strcmp(DasVar_serializeAs(pVar), "composite") == 0){
+		ptrdiff_t aIntr[DASIDX_MAX] = {0};
 		int nIntrRank = DasVar_intrShape(pVar, aIntr);
 		for(int i = 0; i < nIntrRank; ++i) nComp *= aIntr[i];
 	}
@@ -963,11 +1204,11 @@ static PyObject* _compLabels2PyList(const DasVar* pVar)
 	for(long i = 0; i < nComp; ++i) psBuf[i] = pStore + i*uLenEa;
 
 	PyObject* pList = NULL;
-	int nGot = DasVar_compLabels(pVar, psBuf, (int)nComp, uLenEa);
+	int nGot = DasVar_compLbls(pVar, psBuf, (int)nComp, uLenEa);
 	if(nGot < 0){
 		PyErr_Format(g_pPyD2Error,
 			"das2C error %d labeling the components of variable %s", -nGot,
-			DasVar_serialType(pVar)
+			DasVar_serializeAs(pVar)
 		);
 	}
 	else{
@@ -1084,64 +1325,33 @@ static bool _addVars(
 	const DasDs* pDs, DasDim* pDim, PyObject* pDimDict, PyObject* pdArys,
 	PyObject* pdFill
 ){
-	int nDsRank = pDs->nRank;
+	int nDsRank = DasDs_rank(pDs);
 	DasVar* pVar = NULL;
 	PyObject* pVarDict = NULL;
 	PyObject* pStr = NULL;
 	/* PyObject* pIdxMap = NULL; */
 	/*	PyObject* pInt = NULL;*/
-	char sBuf[4096] = {'\0'};
 	
 	size_t v=0;
 	/* size_t i=0; */
-	for(v = 0; v < pDim->uVars; ++v){
-		pVar = pDim->aVars[v];
+	size_t uVars = DasDim_numVars(pDim);
+	for(v = 0; v < uVars; ++v){
+		pVar = DasDim_varAt(pDim, v);
+		const char* sRole = DasDim_roleAt(pDim, v);
 		pVarDict = PyDict_New();
 
-		pStr = PyString_FromString(pDim->aRoles[v]);
+		pStr = PyString_FromString(sRole);
 		PyDict_SetItemString(pVarDict, "role", pStr);
-		Py_DECREF(pStr);
-
-		/* the cal representation units all get converted to ns1970, in the
-		 * _DasCalAryToNumpyAry function above.  Make the variable units match
-		 * what the array units are going to be soon.  
-		 * 
-		 * Note: Array Variables do not check on the units of their arrays after
-		 *       creation, so we are manually pre-updating the Variables to have
-		 *       the correct units. 
-		 * 
-		 * Since the dataset toStr() and dimension toStr() both call down to the
-		 * variables toStr() lets set the units now.
-		 */
-		if((DasVar_valType(pVar) == vtTime) || Units_haveCalRep(pVar->units))
-			pVar->units = Units_fromStr("ns1970");
-		
-		/* all units convertable to seconds get converted to nano seconds in the
-		 * _DasTimeAryToNumpyAry function above */
-		if(Units_canConvert(pVar->units, UNIT_SECONDS))
-			pVar->units = Units_fromStr("ns");
-		
-		
-		pStr = PyString_FromString(pVar->units ? pVar->units : "");
-		PyDict_SetItemString(pVarDict, "units", pStr);
-		Py_DECREF(pStr);
-		
-		/* Save the expression that makes the variable */
-		pStr = PyString_FromString(DasVar_toStr(pVar, sBuf, 4095));
-		PyDict_SetItemString(pVarDict, "expression", pStr);
-		Py_DECREF(pStr);
-
-		/* Save the value type */
-		pStr = PyString_FromString(_valTypeStr(DasVar_valType(pVar)));
-		PyDict_SetItemString(pVarDict, "valtype", pStr);
 		Py_DECREF(pStr);
 
 		/* Array binding: stored arrays bind by id, sequences and constants
 		 * are computed into a synthesized array, reference + offset gets
 		 * None and is left to the python Dimension. */
 		bool bBound = false;
-		if((DasVar_gen(pVar) != NULL) && !DasVar_hasAry(pVar))
-			bBound = _materialize(pDs, pDim, pDim->aRoles[v], pVar, pVarDict, pdArys, pdFill);
+		/* Neither array backed nor an operation: a sequence or a constant */
+		bool bMaterial = !DasVar_hasAry(pVar) && !DasVar_isBin(pVar);
+		if(bMaterial)
+			bBound = _materialize(pDs, pDim, sRole, pVar, pVarDict, pdArys, pdFill);
 		else
 			bBound = _setDictItem(pVarDict, "array",  _varArrayId2Py(pVar)) &&
 			         _setDictItem(pVarDict, "idxmap", _varIdxMap2PyList(pVar, nDsRank));
@@ -1149,6 +1359,22 @@ static bool _addVars(
 			Py_DECREF(pVarDict);
 			return false;
 		}
+
+		/* Units and summary as numpy will hold the values, the das2C
+		 * variable keeps the stream's.  See _pyd2_varExpr(). */
+		DasUnits units = _pyd2_npUnits(pVar);
+		if(units == NULL) units = DasVar_units(pVar);
+		if(!_setDictItem(pVarDict, "units", PyString_FromString(units ? units : "")) ||
+		   !_setDictItem(pVarDict, "expression",
+		                 _pyd2_varExpr(pDim, sRole, pVar, bMaterial))){
+			Py_DECREF(pVarDict);
+			return false;
+		}
+
+		/* Save the value type */
+		pStr = PyString_FromString(_valTypeStr(DasVar_vt(pVar)));
+		PyDict_SetItemString(pVarDict, "valtype", pStr);
+		Py_DECREF(pStr);
 
 		/* The <ops> formalism, the internal shape and the component labels.
 		 * A scalar gets None, [] and a one item label list, so callers need
@@ -1171,7 +1397,7 @@ static bool _addVars(
 		Py_DECREF(pIdxMap);
 		 */
 
-		PyDict_SetItemString(pDimDict, pDim->aRoles[v], pVarDict);
+		PyDict_SetItemString(pDimDict, sRole, pVarDict);
 		Py_DECREF(pVarDict);
 	}
 
@@ -1186,7 +1412,7 @@ static PyObject* _Stream2Tuple(DasStream* pStream)
 	DasDs* pDs = NULL;
 	DasDim* pDim = NULL;
 
-	PyObject* pDsList = PyList_New( DasStream_numDesc(pStream) );
+	PyObject* pDsList = PyList_New( DasStream_numDesc(pStream, DASDESCTYPE_DS) );
 	PyObject* pHdrDict = PyDict_New();
 
 	/* Iteration variables used here */
@@ -1194,7 +1420,7 @@ static PyObject* _Stream2Tuple(DasStream* pStream)
 	size_t a = 0; /* Array index */
 	size_t m = 0; /* Dimension index */
 
-	ptrdiff_t shape[VARIDX_MAX] = {0};
+	ptrdiff_t shape[DASIDX_MAX] = {0};
 	int nRank, i = 0;
 	DasAry* pDasAry = NULL;
 
@@ -1204,47 +1430,43 @@ static PyObject* _Stream2Tuple(DasStream* pStream)
 	/* Before going through all the setup, see if the Das Arrays can even be
 	 * converted to ndarrays with this extension.  Once code has been written
 	 * to generate ragged ndarrays, remove this check */
-	int nPktId = 0;
-	while((pDesc = DasStream_nextDesc(pStream, &nPktId)) != NULL){
-		
-		if(DasDesc_type(pDesc) != DATASET){
-			PyErr_Format(g_pPyD2Error,
-				"Error in das2C, invalid descriptor type returned by DasDsBldr: %d",
-				DasDesc_type(pDesc)
-			);
-		}
+	/* The V3 read model makes every descriptor a dataset, and the type
+	 * filter on the walk would skip anything else anyway */
+	pDesc = NULL;
+	while((pDesc = DasStream_nextDesc(pStream, pDesc, DASDESCTYPE_DS)) != NULL){
 		pDs = (DasDs*)pDesc;
 
-		for(a = 0; a < pDs->uArrays; ++a){
-			pDasAry = pDs->lArrays[a];
+		size_t uArys = DasDs_numArys(pDs);
+		for(a = 0; a < uArys; ++a){
+			pDasAry = DasDs_aryAt(pDs, a);
 
 			/* Make sure the das array does not contain a user defined type */
-			if(DasAry_valType(pDasAry) == vtUnknown){
+			if(DasAry_vt(pDasAry) == DASVT_UNK){
 				PyErr_Format(g_pPyD2Error,
 					"Array %s from Dataset %s contains a generic type. "
 					"Generic types are not supported by the python extension.",
-					DasAry_toStr(pDasAry, sInfo, 63), pDs->sId
+					DasAry_toStr(pDasAry, sInfo, 63), DasDs_name(pDs)
 				);
 			}
 
-			DasAry_shape(pDasAry, shape);
-			for(i = 1; i < pDasAry->nRank; ++i){
+			int nAryRank = DasAry_shape(pDasAry, shape);
+			for(i = 1; i < nAryRank; ++i){
 
-				if(shape[i] == VARIDX_RAGGED){
+				if(shape[i] == DASIDX_RAGGED){
 
-					/* Special exception if array is vtByte, has the flag
-					 * D2ARY_AS_STRING and raggedness is only in the last dimension
+					/* Special exception if array is DASVT_BYTE, has the flag
+					 * DASARY_AS_STRING and raggedness is only in the last dimension
 					 * because I can turn these into cubic string object arrays */
 
-					if((i == (pDasAry->nRank - 1)) &&
-					   (DasAry_valType(pDasAry) == vtByte) &&
-						((pDasAry->uFlags & D2ARY_AS_STRING)==D2ARY_AS_STRING) )
+					if((i == (nAryRank - 1)) &&
+					   (DasAry_vt(pDasAry) == DASVT_BYTE) &&
+						((DasAry_usage(pDasAry) & DASARY_AS_STRING)==DASARY_AS_STRING) )
 						continue;
 
 					PyErr_Format(g_pPyD2Error,
 						"Array %s from dataset %s is ragged.  Conversion "
 						"of ragged DasArrays to NumPy ndarrays has not been "
-						"implemented.", DasAry_toStr(pDasAry, sInfo, 63), pDs->sId
+						"implemented.", DasAry_toStr(pDasAry, sInfo, 63), DasDs_name(pDs)
 					);
 					return NULL;
 				}
@@ -1272,7 +1494,7 @@ static PyObject* _Stream2Tuple(DasStream* pStream)
 	/* Handle the stream header conversion */
 	pProps = _props2PyDict((DasDesc*)pStream);
 	PyDict_SetItemString(pHdrDict, "props", pProps);
-	DasStream_info(pStream, sInfo, 4095);
+	DasStream_toInfoStr(pStream, sInfo, sizeof(sInfo));
 	pStr = PyString_FromString(sInfo);
 	PyDict_SetItemString(pHdrDict, "info", pStr);
 	Py_DECREF(pStr);
@@ -1284,16 +1506,9 @@ static PyObject* _Stream2Tuple(DasStream* pStream)
 	 * don't increment the count, but they do assume they can decrement it at
 	 * will.  So... call Py_DECREF for dicts, but not for lists.  */
 
-	nPktId = 0;
+	pDesc = NULL;
 	d = 0;
-	while((pDesc = DasStream_nextDesc(pStream, &nPktId)) != NULL){
-
-		if(DasDesc_type(pDesc) != DATASET){
-			PyErr_Format(g_pPyD2Error,
-				"Error in das2C, invalid descriptor type returned by DasDsBldr: %d",
-				DasDesc_type(pDesc)
-			);
-		}
+	while((pDesc = DasStream_nextDesc(pStream, pDesc, DASDESCTYPE_DS)) != NULL){
 		pDs = (DasDs*)pDesc;
 
 		/* Convert the properties */
@@ -1304,20 +1519,19 @@ static PyObject* _Stream2Tuple(DasStream* pStream)
 		PyDict_SetItemString(pDsDict, "props", pProps);
 		Py_DECREF(pProps);
 
-		pInt = PyInt_FromLong(pDs->nRank);
+		pInt = PyInt_FromLong(DasDs_rank(pDs));
 		PyDict_SetItemString(pDsDict, "rank", pInt);
 		Py_DECREF(pInt);
 
-		pStr = PyString_FromString(pDs->sId);
+		pStr = PyString_FromString(DasDs_name(pDs));
 		PyDict_SetItemString(pDsDict, "id", pStr);
 		Py_DECREF(pStr);
 
-		pStr = PyString_FromString(pDs->sGroupId);
+		pStr = PyString_FromString(DasDs_group(pDs) ? DasDs_group(pDs) : "");
 		PyDict_SetItemString(pDsDict, "group", pStr);
 		Py_DECREF(pStr);
 
-		/* Don't save the info string yet.  Converting to numpy datetime64 
-		 * may alter the DasVar units... */
+		/* The info string is made last, from the finished variable dicts */
 		
 		nRank = DasDs_shape(pDs, shape);
 		pList = PyList_New(nRank);
@@ -1347,18 +1561,23 @@ static PyObject* _Stream2Tuple(DasStream* pStream)
 		Py_DECREF(pdArys);
 		Py_DECREF(pdFill);
 
-		for(m = 0; m < pDs->uDims; ++m){
-			pDim = pDs->lDims[m];
+		/* Dimensions are listed by type now, coordinates first.  Each type
+		 * goes in its own dict, so the interleaving order v2 gave is moot. */
+		static const das_dimtype aDimTypes[2] = {DASDIMTYPE_COORD, DASDIMTYPE_DATA};
+		for(int t = 0; t < 2; ++t){
+		size_t uDims = DasDs_numDims(pDs, aDimTypes[t]);
+		for(m = 0; m < uDims; ++m){
+			pDim = DasDs_dimAt(pDs, m, aDimTypes[t]);
 
 			/* Create and add the dimension dictionary to the right category */
 			pDimDict = PyDict_New();
-			pDict = pDim->dtype == DASDIM_COORD ? pCoordDict : pDataDict;
-			PyDict_SetItemString(pDict, pDim->sId, pDimDict);
+			pDict = aDimTypes[t] == DASDIMTYPE_COORD ? pCoordDict : pDataDict;
+			PyDict_SetItemString(pDict, DasDim_name(pDim), pDimDict);
 			Py_DECREF(pDimDict);
 
 			/* Fill in information for this dimension */
 			pStr = PyString_FromString(
-				pDim->dtype == DASDIM_COORD ? "COORD_DIM" : "DATA_DIM"
+				aDimTypes[t] == DASDIMTYPE_COORD ? "COORD_DIM" : "DATA_DIM"
 			);
 			PyDict_SetItemString(pDimDict, "type", pStr);
 			Py_DECREF(pStr);
@@ -1373,50 +1592,36 @@ static PyObject* _Stream2Tuple(DasStream* pStream)
 				Py_DECREF(pDsDict); Py_DECREF(pDsList); return NULL;
 			}
 		}
+		}  /* dimension types */
 
-		for(a = 0; a < pDs->uArrays; ++a){
-			pAry = _DasAryToNumpyAry(pDs->lArrays[a]);
+		size_t uArys = DasDs_numArys(pDs);
+		for(a = 0; a < uArys; ++a){
+			pDasAry = DasDs_aryAt(pDs, a);
+			pAry = _DasAryToNumpyAry(pDasAry);
 			if(pAry == NULL){
 				Py_DECREF(pDsDict); Py_DECREF(pDsList);
 				return NULL;
 			}
-			PyDict_SetItemString(pdArys, pDs->lArrays[a]->sId, pAry);
+			PyDict_SetItemString(pdArys, DasAry_id(pDasAry), pAry);
 			Py_DECREF(pAry);
 
-			pObj = _DasAryFillToObj(pDs->lArrays[a]);
+			pObj = _DasAryFillToObj(pDasAry);
 			if(pObj == NULL){
 				Py_DECREF(pDsDict); Py_DECREF(pDsList);
 				return NULL;
 			}
-			PyDict_SetItemString(pdFill, pDs->lArrays[a]->sId, pObj);
+			PyDict_SetItemString(pdFill, DasAry_id(pDasAry), pObj);
 			Py_DECREF(pObj);
 		}
 		
-		/* okay, now it's safe to save the dataset info string, AFTER any unit
-		 * conversions that may have taken place */
-		char* pInfo = DasDs_toStr(pDs, sInfo, 4095);
-		if(pInfo == NULL){
-			char* pTmp = (char*) calloc(65536, sizeof(char));
-			pInfo = DasDs_toStr(pDs, pTmp, 65535);
-			if(pInfo == NULL){
-				free(pTmp);
-				PyErr_Format(g_pPyD2Error,
-					"Dataset description is > 64 KB, update py_builder.h if you want to "
-					"handle datasets with this many variables."
-				);
-				return NULL;
-			}
-			pStr = PyString_FromString(sInfo);
-			free(pTmp);
-		}
-		else{
-			pStr = PyString_FromString(sInfo);
-		}
+		/* The info string says what python got, so it's made from the
+		 * finished variable dicts, see _pyd2_dsInfo() */
+		pStr = _pyd2_dsInfo(pDs, pCoordDict, pDataDict);
+		if(pStr == NULL){ Py_DECREF(pDsDict); Py_DECREF(pDsList); return NULL; }
 		PyDict_SetItemString(pDsDict, "info", pStr);
 		Py_DECREF(pStr);
 
-		/* Attach correlated dataset converted to python objects */
-		PyList_SetItem(pDsList, d, pDsDict);
+PyList_SetItem(pDsList, d, pDsDict);
 
 		++d; 
 	}
@@ -1489,21 +1694,25 @@ const char pyd2help_read_file[] =
 "                scalar.  Same preference order as das3_cdf's LABL_PTR_1\n"
 "\n";
 
-static PyObject* pyd2_read_file(PyObject* self, PyObject* args)
+/* Read a whole stream from a transport into python objects.  Takes the
+ * transport, NULL included, so callers need no cleanup of their own.
+ *
+ * The v2 dataset builder is gone: a reader in the V3 model up-converts das2
+ * headers to datasets itself, and with accumulation on keeps every packet,
+ * so the stream it hands over is what the builder used to assemble. */
+static PyObject* _readXport(DasXport* pX)
 {
-	const char* sFile;
+	if(pX == NULL) return pyd2_setException(g_pPyD2Error);
+
+	DasIO* pIn = new_DasIO("das3py", pX, "r");
+	if(pIn == NULL){
+		del_DasXport(pX);
+		return pyd2_setException(g_pPyD2Error);
+	}
+	DasIO_setModel(pIn, DASIOMODEL_V3);
+	DasIO_setAccum(pIn, true);
+
 	int nRet = DAS_OKAY;
-
-	if(!PyArg_ParseTuple(args, "s:read_file", &sFile))
-		return NULL;
-
-	DasIO* pIn = new_DasIO_file("das2py", sFile, "r");
-	if(pIn == NULL) return pyd2_setException(g_pPyD2Error);
-	DasIO_setModel(pIn, STREAM_MODEL_MIXED);  /* Allow all stream versions */
-
-	DasDsBldr* pBldr = new_DasDsBldr();
-	if(pBldr == NULL) return pyd2_setException(g_pPyD2Error);
-	DasIO_addProcessor(pIn, (StreamHandler*)pBldr);
 
 	/* Release the GIL while doing I/O */
 	Py_BEGIN_ALLOW_THREADS
@@ -1512,18 +1721,30 @@ static PyObject* pyd2_read_file(PyObject* self, PyObject* args)
 
 	if(nRet != DAS_OKAY){
 		del_DasIO(pIn);
-		del_DasDsBldr(pBldr);
 		return pyd2_setException(g_pPyD2Error);
 	}
 
-	/* Build python list of dataset objects here */
-	DasStream* pStream = DasDsBldr_getStream(pBldr);
-	DasDsBldr_release(pBldr); /* Free the correlated datasets from builder mem */
-	PyObject* pRet = (pStream != NULL) ? _Stream2Tuple(pStream) : NULL;
-	del_DasStream(pStream);  /* arrays don't own re-used data and may be freed */
+	DasStream* pStream = DasIO_takeStream(pIn);
 	del_DasIO(pIn);
+	if(pStream == NULL){
+		/* v2 returned NULL here with no exception set */
+		PyErr_SetString(g_pPyD2Error, "Input ended before a stream header was read");
+		return NULL;
+	}
 
+	PyObject* pRet = _Stream2Tuple(pStream);
+	del_DasDesc((DasDesc*)pStream);  /* arrays numpy took over were disowned */
 	return pRet;
+}
+
+static PyObject* pyd2_read_file(PyObject* self, PyObject* args)
+{
+	const char* sFile;
+
+	if(!PyArg_ParseTuple(args, "s:read_file", &sFile))
+		return NULL;
+
+	return _readXport(new_DasXport_file(sFile, "r"));
 }
 
 /* ************************************************************************* */
@@ -1554,74 +1775,41 @@ static PyObject* pyd2_read_server(PyObject* self, PyObject* args)
 	       "?server=dataset&dataset=Galileo/PWS/Survey_Electric"
 	       "&start_time=2001-001&end_time=2001-002";
 	const char* sUserAgent = NULL;
-	float rConSec = DASHTTP_TO_MIN * DASHTTP_TO_MULTI;
+	float rConSec = DASHTTP_TIMEOUT_MIN * DASHTTP_TIMEOUT_MULTI;
 	if(!PyArg_ParseTuple(args, "s|fs:read_server", &sInitialUrl, &rConSec,
 			               &sUserAgent))
 		return NULL;
 
-	bool bOkay = false;
-	DasHttpResp res;
 	PyObject* pExcept = g_pPyD2Error;
-	PyObject* pRet = NULL;
+	DasHttpResp* pRes = NULL;
 
 	/* Release the GIL while the connection processes */
 	Py_BEGIN_ALLOW_THREADS
-	bOkay = das_http_getBody(sInitialUrl, sUserAgent, g_pMgr, &res, rConSec);
+	pRes = new_DasHttpResp_get(sInitialUrl, sUserAgent, g_pMgr, rConSec);
 	Py_END_ALLOW_THREADS
 
-	if(!bOkay){
-		if((res.nCode == 401)||(res.nCode == 403)) pExcept = g_pPyD2AuthErr;
-		if((res.nCode == 400)||(res.nCode == 404)) pExcept = g_pPyD2QueryErr;
+	if(pRes == NULL) return PyErr_NoMemory();
+
+	if(!DasHttpResp_isOk(pRes)){
+		int nCode = DasHttpResp_code(pRes);
+		if((nCode == 401)||(nCode == 403)) pExcept = g_pPyD2AuthErr;
+		if((nCode == 400)||(nCode == 404)) pExcept = g_pPyD2QueryErr;
 		if(pExcept == NULL) pExcept = g_pPyD2Error;
 
-		pRet = PyErr_Format(pExcept, "%d, Could not get body for URL, reason: %s",
-		                    res.nCode, res.sError);
-		DasHttpResp_clear(&res);
-		return pRet;
-	}
-	char sUrl[512] = {'\0'};
-	das_url_toStr(&(res.url), sUrl, 511);
-	if(strcmp(sUrl, sInitialUrl) != 0)
-		daslog_info_v("Redirected to %s", sUrl);
-
-	DasIO* pIn;
-
-	if(DasHttpResp_useSsl(&res))
-		pIn = new_DasIO_ssl("das2py", res.pSsl, "r");
-	else
-		pIn = new_DasIO_socket("das2py", res.nSockFd, "r");
-
-	DasIO_setModel(pIn, STREAM_MODEL_MIXED);  /* Allow all stream versions */
-
-	DasDsBldr* pBldr = new_DasDsBldr();
-	DasIO_addProcessor(pIn, (StreamHandler*)pBldr);
-
-	int nRet = DAS_OKAY;
-
-	/* Release the GIL while processing the message body */
-	Py_BEGIN_ALLOW_THREADS
-	nRet = DasIO_readAll(pIn);
-	Py_END_ALLOW_THREADS
-
-	if(nRet != DAS_OKAY){
-		/* Bounce das2 error message to python's error facility */
-		del_DasIO(pIn);
-		del_DasDsBldr(pBldr);
-
-		pRet = pyd2_setException(g_pPyD2Error);
-		DasHttpResp_clear(&res);
-		return pRet;
+		const char* sErr = DasHttpResp_error(pRes);
+		PyErr_Format(pExcept, "%d, Could not get body for URL, reason: %s",
+		             nCode, sErr ? sErr : "unknown");
+		del_DasHttpResp(pRes);
+		return NULL;
 	}
 
-	/* Build python list of dataset objects here */
-	DasStream* pStream = DasDsBldr_getStream(pBldr);
-	DasDsBldr_release(pBldr); /* Free the correlated datasets from builder mem */
-	pRet = (pStream != NULL) ? _Stream2Tuple(pStream) : NULL;
-	del_DasStream(pStream);  /* arrays don't own re-used data and may be freed */
-	DasHttpResp_clear(&res);
-	del_DasIO(pIn);
+	if(strcmp(DasHttpResp_url(pRes), sInitialUrl) != 0)
+		daslog_infof("Redirected to %s", DasHttpResp_url(pRes));
 
-	return pRet;
+	/* The body transport hides whether this is a socket or TLS */
+	DasXport* pBody = DasHttpResp_takeBody(pRes);
+	del_DasHttpResp(pRes);
+	return _readXport(pBody);
 }
 
 
@@ -1652,37 +1840,5 @@ static PyObject* pyd2_read_cmd(PyObject* self, PyObject* args)
 	if(!PyArg_ParseTuple(args, "s:read_cmd", &sCmd))
 		return NULL;
 
-	DasIO* pIn = new_DasIO_cmd("das2py", sCmd);
-	if(pIn == NULL )	return pyd2_setException(g_pPyD2Error);
-	DasIO_setModel(pIn, STREAM_MODEL_MIXED);  /* Allow all stream versions */
-
-	DasDsBldr* pBldr = new_DasDsBldr();
-	if(pBldr == NULL){
-		del_DasIO(pIn);
-		return pyd2_setException(g_pPyD2Error);
-	}
-	
-	DasIO_addProcessor(pIn, (StreamHandler*)pBldr);
-
-	int nRet = DAS_OKAY;
-
-	/* Release the GIL while processing the command output */
-	Py_BEGIN_ALLOW_THREADS
-	nRet = DasIO_readAll(pIn);
-	Py_END_ALLOW_THREADS
-
-	if(nRet != DAS_OKAY){
-		del_DasIO(pIn);
-		del_DasDsBldr(pBldr);
-		return pyd2_setException(g_pPyD2Error);  /* Bounce das2 err msg to python */
-	}
-
-	/* Build python list of dataset objects here */
-	DasStream* pStream = DasDsBldr_getStream(pBldr);
-	DasDsBldr_release(pBldr); /* Free the correlated datasets from builder mem */
-	PyObject* pRet = (pStream != NULL) ? _Stream2Tuple(pStream) : NULL;
-	del_DasStream(pStream);  /* arrays don't own re-used data and may be freed */
-	del_DasIO(pIn);
-
-	return pRet;
+	return _readXport(new_DasXport_cmd(sCmd));
 }

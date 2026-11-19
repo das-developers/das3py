@@ -6,7 +6,7 @@ only arguments, print with end=) fails here as soon as the py2 chain runs.
 Then greps for the idioms that parse everywhere but only work on one side:
 zero-argument super(), and open() with encoding= outside a try block.
 
-Runs from the das2py root, with no das2 import, so it works before the
+Runs from the repository root, with no das2 import, so it works before the
 extension is built.
 """
 
@@ -17,7 +17,7 @@ import re
 import glob
 import warnings
 
-ROOTS = ('das3', 'das2', 'scripts')
+ROOTS = ('das3', 'compat/das2py/das2', 'scripts')
 
 # Test files that are part of make test; the rest of test/ holds generators
 # and scratch that never run on 2.7

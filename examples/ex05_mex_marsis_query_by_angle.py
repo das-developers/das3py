@@ -1,4 +1,4 @@
-# das2 module example 6:
+# das3 module example 6:
 #   Plotting Mars Express MARSIS plasma density.  Demonstrates:
 #     
 #     1) Subsetting data in dimensions other than time

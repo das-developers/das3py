@@ -1,4 +1,4 @@
-# das2 module example 3:
+# das3 module example 3:
 #    Plotting Cassini RPWS multi-mode spectra using hexbin algorithm
 
 import numpy

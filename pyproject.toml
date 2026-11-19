@@ -1,6 +1,6 @@
 [project]
-name = "das2py"
-version = "3.0rc7"
+name = "das3py"
+version = "3.0.5rc1"
 dependencies = [ "numpy>=1.16.6", "lxml" ]
 description = "An efficient space physics data client for python"
 readme = "README.md"
@@ -13,15 +13,16 @@ authors = [
 maintainers = [
 	{name = "K Steele", email = "KaiwenS7@users.noreply.github.com"}
 ]
-keywords = ["space-physics", "magnetosphere", "das2"]
+keywords = ["space-physics", "magnetosphere", "das2", "das3"]
 
 [project.urls]
-Homepage = "https://das2.org/das2py"
-Repository = "https://github.com/das-developers/das2py"
+Homepage = "https://github.com/das-developers/das3py"
+Repository = "https://github.com/das-developers/das3py"
+Changelog = "https://github.com/das-developers/das3py/blob/main/CHANGELOG.md"
 
 [project.scripts]
 das_verify = "das3.verify:main"
-das_cdf_info = "das3.cdf:main"
+das_cdfinfo = "das3.cdfinfo:main"
 
 [build-system]
 #requires = [ "setuptools", "numpy>=2.0.0" ]
@@ -30,4 +31,4 @@ build-backend = "setuptools.build_meta"
 
 #[tool.setuptools]
 #include-package-data = true
-#packages = ["das3", "das3.pycdf", "das2", "_das3"]
+#packages = ["das3", "das3.pycdf", "_das3"]

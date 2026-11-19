@@ -1,4 +1,4 @@
-# das2py example 10:
+# das3 example 10:
 #    Creating datasets manually and observing automatic dataset shape
 #    adjustments.
 #

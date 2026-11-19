@@ -1,4 +1,4 @@
-# das2 module example 7
+# das3 module example 7
 #   Plotting filtered versus unfiltered Cassini RPWS survey data using
 #   data source options
 

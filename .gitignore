@@ -1,10 +1,11 @@
 /build.*
 __pycache__
 das3/*.pyc
-das2/*.pyc
+compat/das2py/das2/*.pyc
 *.png
 build_*venv
 dist
+dist_compat
 *.egg-info
 test_*venv
 wav*.cdf

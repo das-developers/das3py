@@ -1,4 +1,4 @@
-# das2py example 11:
+# das3 example 11:
 #    Reading catalogs and observing two stage node initialization
 
 import das3

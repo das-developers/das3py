@@ -1,6 +1,6 @@
 # The MIT License
 #
-# Copyright 2019 Chris Piker
+# Copyright 2019-2026 Chris Piker
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -28,8 +28,6 @@ import numpy
 import datetime
 import os
 import _das3
-import argparse
-from os.path import basename as bname
 
 from . dataset import *
 
@@ -43,7 +41,6 @@ except ImportError:
 # globals stay out of 'from das3.cdf import *'.
 __all__ = [
 	'write',
-	'main',
 ]
 
 
@@ -455,60 +452,3 @@ def write(ds, path, src=None, derived=False):
 				cdf.attrs[sUriKey] = src.props['uris']
 		
 	return cdf
-	
-# ########################################################################## #
-
-def main():
-	"""A little utility to print the structure of a CDF file"""
-	
-	psr = argparse.ArgumentParser(
-		description="A CDF info printer based on pycdf from Triad National Security, LLC"
-	)
-		
-	# End command line with list of files to validate...
-	psr.add_argument(
-		'lFiles', help='The file(s) to validate', nargs='+', metavar='file'
-	)
-	
-	opts = psr.parse_args()	
-	
-	for sFile in opts.lFiles:	
-		try:
-
-			f = pycdf.CDF(sFile)
-			print("Structure of: %s"%bname(sFile))
-
-			for k in f.attrs:
-				print(k, "=", f.attrs[k])
-	
-			print()
-
-			for k in f.keys():
-				print(k)
-				print(f[k])
-				print(f[k].attrs)
-	
-				# Now print the first record
-				print( f[k].shape)
-				if len(f[k].shape) == 1:
-					print( f[k][:] )
-				else:
-					if f[k].shape[0] > 0:
-						print( f[k][0,:] )
-	
-				print()
-				
-			f.close()
-
-		except (ValueError, IOError) as e:
-			sys.stderr.write("%s [ERROR]\n"%str(e))
-			return 13
-			
-	return 0	
-
-# ########################################################################## #
-if __name__ == "__main__":
-	sys.exit(main())
-
-
-

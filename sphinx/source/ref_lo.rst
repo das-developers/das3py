@@ -3,7 +3,7 @@ _das3, libdas2 Python bindings
 Functions in this module provide bindings to the das2C_ library.  Most of
 the small server side programs used to reduce streams in time, compute
 power spectral densities, read cache blocks are based off of libdas2.  Whenever
-possible das2py wraps das2C functionality instead of creating a parallel
+possible das3py wraps das2C functionality instead of creating a parallel
 code base.
 
 .. contents::
@@ -109,7 +109,7 @@ keys::
 	                   # 'composite', ...)
 
 	   'expression':str, # A description of the variable for people.  Nothing
-	                   # in das2py parses it.
+	                   # in das3py parses it.
 
 	   'array':str,    # The key in 'arrays' of the ndarray backing this variable.
 	                   # None for reference + offset, which the higher level
