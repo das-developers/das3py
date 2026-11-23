@@ -19,6 +19,11 @@ and returns the very same modules as `import das3`:
 python -m pip install -U das2py
 ```
 
+This package stays on the das3py 3.0 series, where the method names
+from das2py 2.3 still work.  das3py 3.1 removes them, so code that
+has moved to `import das3` and the current names should uninstall das2py
+to get newer releases.
+
 The alias issues a `PendingDeprecationWarning`, which Python hides by
 default.  To find code that still uses the old name, run it with:
 

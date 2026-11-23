@@ -26,7 +26,8 @@ method renames, and what you can read: das3 streams and composite values.
 
 - **The pip and conda name is `das3py`.**  `das2py` 3.0.6 is a small
   transitional package that installs das3py and aliases the old das2
-  module name for minimal code breakage.
+  module name for minimal code breakage.  It requires `das3py<3.1`, so
+  old scripts stay on the 3.0 series, where the 2.3 names still work.
   ```bash
   python -m pip install -U das2py   # existing installs: das3py plus the alias
   python -m pip install das3py      # new code: das3 only

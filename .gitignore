@@ -17,3 +17,4 @@ das3/pycdf/dllcdf.dll
 session.txt
 /tmp
 /build/
+/py2.7-*
