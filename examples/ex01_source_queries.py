@@ -7,75 +7,71 @@
 # and HAPI servers.  A future Source derived class will provide access to
 # static file collections.
 #
-# There are currently three types of data querys supported by das3py and the
-# das2 catalog system, each of which is useful for a different purpose.
+# There are two ways to ask for data, and they don't mix.
 #
-#  0.  Get example data using Source.example()
+#  1.  Through the source's interface, Source.get()
 #
-#      All data sources are required to provide at least one default set of
-#      data for testing and evaluation purposes.  Named examples may be
-#      requeseted if desired.  Other than the example name (which is optional)
-#      no arguments are required.
+#      The source node describes what can be asked for: coordinate ranges,
+#      which data to send, reader options.  das2C checks a query against
+#      that description and translates it into the request the server
+#      takes.  When a server is replaced or its parameters change the node
+#      is updated and queries written this way keep working.  This is the
+#      route to use.
 #
-#  1.  Protocol specific queries using Source.protoQuery()
+#      Every source also provides at least one example, a complete query
+#      that is known to return data.  get() with no arguments runs one.
 #
-#      Using protoQuery() directly means that application code is tied to a
-#      specific GET API and will break if the server definition changes (for
-#      example due to upgrades).  Even with these low level queries, automatic
-#      failover to redundant servers is still supported.
+#  2.  By URL, das3.read_http()
 #
-#  2.  Source public API queries using Source.query()
-#
-#      These use the more generic use the public interface API of the source.
-#      The Source node contains information to translate public API queries
-#      into the specific protocol strings that must be issued to the server.
-#      As new server versions are developed the underlying protocol may change,
-#      but these query parameters can remain fixed.
-#
-# The code below provides examples of all three working query types.
-#
-#   For the curious a fourth query type that will handle contacting multiple
-#   heterogenous data sources using permanent IDs such as DOIs is prototyped
-#   in the file: future/exNN_collection_queries.py .
+#      Any URL that returns a das stream can be read directly.  Nothing is
+#      checked, the catalog isn't involved, and the code is tied to one
+#      server's parameters.  It's there for servers that have no catalog
+#      entry and for testing.
 
 import das3
 import sys
 
 
-sId = 'site:/uiowa/cassini/rpws/hires_midfreq_waveform/das2'
+sId = 'site:/uiowa/cassini/rpws/hires_midfreq_waveform'
 
-# 0. Getting example data.  All valid das2 catalog Source definitions are
-#    required to provide at least one example dateset.
-
-src = das3.get_source(sId)
-for name, summary in src.examples(): print(name, "|", summary)
-lDatasets = src.get()  # Gets the first example if no arguments are provide
-
-
-# 1. Protocol specific query (discouraged, but sometimes necessary).  If the
-#    data are moved to a different server with a different API, this code will
-#    break.
+# 1a. Getting example data.  All das catalog Source definitions are
+#     required to provide at least one example dataset.
 
 src = das3.get_source(sId)
-print( src.infoProto() )
+for number, label in src.examples(): print(number, "|", label)
+streamHdr, lDatasets = src.get()  # The first example, if no query is given
 
-dQuery = {
-   'start_time':'2008-223T09:06', 'end_time':'2008-223T09:13',
-   'params':'--80khz'
-}
-lDatasets = src.getProto(dQuery, verbose=True)
-print(lDatasets[0])
 
-# 2. Public interface query.  This interface exists to make it easier to
-#    associate data navigation operations with the query parameters.  This
-#    is the recommended interface for most uses.
+# 1b. An interface query.  info() lists what can be asked for; its Key
+#     column holds the names a query uses.
 
-src = das3.get_source(sId)
 print(src.info())
 
-dQuery = { 'time':('2008-223T09:06', '2008-223T09:13'), 
-           'frequency':{'band':'80 kHz'}  }
-streamHdr, lDatasets = src.get(dQuery)
+# A tuple is a range.  This source's 'rate' option selects between the
+# receiver's 10 kHz and 80 kHz bands.
+dQuery = { 'time':('2008-223T09:06', '2008-223T09:13'), 'rate':'80khz' }
+streamHdr, lDatasets = src.get(dQuery, verbose=True)
+
+# A query das2C can't make sense of is refused before anything is sent, with
+# the reason for each bad entry.
+try:
+   src.get({ 'time':('2008-223T09:06', '2008-223T09:13'), 'rate':'40khz' })
+except ValueError as e:
+   print(e)
+
+
+# 2. A request by URL (discouraged, but sometimes necessary).  infoProto()
+#    shows the GET parameters the server behind this source takes, and
+#    baseUrls() where it is.  If the data move to a server with different
+#    parameters this code breaks, and the query in 1b does not.  That
+#    happens: in 2026 many das2 servers were replaced by dasflex, which
+#    spells the time range read.time.min and read.time.max.
+
+print(src.infoProto())
+
+sBase = src.baseUrls()[0]
+sUrl = sBase + '&start_time=2008-223T09:06&end_time=2008-223T09:13&params=--80khz'
+streamHdr, lDatasets = das3.read_http(sUrl)
 
 # Print dataset info. Actually using the datasets returned via these queries
 # is the subject of subsequent examples
@@ -83,4 +79,3 @@ streamHdr, lDatasets = src.get(dQuery)
 for ds in lDatasets:
    print(ds)
    print("")
-

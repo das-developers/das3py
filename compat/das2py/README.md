@@ -1,6 +1,6 @@
 # das2py is now das3py
 
-As of version 3.0.5 this library is published as
+As of version 3.0.6 this library is published as
 [**das3py**](https://pypi.org/project/das3py/).  It imports as `das3`,
 named for the das3 stream format it reads, and runs on Python 2.7 and 3.x
 alike.

@@ -26,7 +26,7 @@ else:
    resolution /= 100.0
    subset = (sys.argv[1], sys.argv[2], resolution)
 
-sId = 'site:/uiowa/voyager/1/pws/specanalyzer-4s-efield/das2'
+sId = 'site:/uiowa/voyager/1/pws/specanalyzer-4s-efield'
 src = das3.get_source(sId)
 
 (hdr,lDs) = src.get({'time':subset})

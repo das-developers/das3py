@@ -106,7 +106,8 @@ class Node(object):
 		self.bGlobal = bGlobal
 
 		self.path = dDef['_path']
-		self.name = dDef['name']
+		# A SourceSet lists its children by label alone
+		self.name = dDef.get('name') or dDef.get('label') or self.path
 
 		self.bStub = bStub
 

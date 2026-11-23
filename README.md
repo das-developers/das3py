@@ -45,7 +45,7 @@ The short version, for people upgrading from 2.3:
 * **Tidier names.**  `dir(das3)` shows the public API and nothing else.  A
   few methods were renamed to match the rest: `DasTime.fromString`,
   `DasTime.roundDoy`, `Dimension.hasProp` and `hasPropVal` (replacing
-  `propEq`), `Source.getProto` and `infoProto`.  The 2.3 names still work
+  `propEq`) and `Source.infoProto`.  The 2.3 names still work
   and warn, so old scripts keep running.  `Quantity.to_value` keeps its
   snake_case on purpose, since that's AstroPy's name for the same thing.
 * **das_verify checks more.**  Index counts against the dataset rank, one
@@ -57,7 +57,7 @@ The short version, for people upgrading from 2.3:
 ## Upgrading from das2py
 
 As of version 3.0 the package is `das3`, named for the das3 stream format,
-and as of 3.0.5 it is distributed as `das3py`.  It runs on Python 2.7 and
+and as of 3.0.6 it is distributed as `das3py`.  It runs on Python 2.7 and
 3.x alike.
 
 The `das2py` name on PyPI is now a small transitional package.  Upgrading
@@ -114,43 +114,43 @@ to build das3py and all dependencies:
    
    Rocky Linux or Compatable
    ```bash
-   dnf install git gcc expat-devel fftw-devel openssl-devel python3-devel
+   dnf install git gcc make curl expat-devel fftw-devel openssl-devel python3-devel
    ```
    Debian Linux or Compatable
    ```bash
-   apt install gcc git libexpat-dev libfftw3-dev libssl-dev python3-dev
+   apt install gcc git make curl libexpat-dev libfftw3-dev libssl-dev python3-dev
    ```
 
-2. Get both source trees in parallel directories.  Unless the `DAS2C`
-   environment variable is set, the makefile will look for das2C in
-   a parallel directory.
+2. Get the source, along with the das2C it goes with.
    ```bash
-   mkdir -p git && cd git
-   git clone https://github.com/das-developers/das2C.git
-   git clone https://github.com/das-developers/das3py.git
+   git clone --recursive https://github.com/das-developers/das3py.git
    ```
+   das2C is a git submodule in `deps/das2C`, pegged to the das2C release
+   this das3py was written and tested against.  If you cloned without
+   `--recursive` that directory is empty; fill it with
+   `git submodule update --init`.
 
 3. Build and test sources against a *specific* version of python. The
-   makefiles will automatically find python if `PY_BIN` is not defined,
+   makefile will automatically find python if `PY_BIN` is not defined,
    but providing an explicit path avoids confusion down the road.  For
    old Python2 builds, PY_BIN is required, as Python3 will be built by
    default.
 
-   Note that the `make` command is not needed to build das3py. Python
-   invocations could be typed manually, but it's saves time, encourages
-   testing, and we need it for building das2C anyway.
-
    ```bash
-   cd git/das2C
-   make CDF=yes SPICE=yes         # das3py needs spice and cdf utils
-   make CDF=yes SPICE=yes test
-   cd ../
-    
-   cd ../das3py
-   make PY_BIN=/path/to/python          # See PY_BIN note above
-   make PY_BIN=/path/to/python test     # optional, but recommended
-   make PY_BIN=/path/to/python example  # optional, but recommended
-   cd ../
+   cd das3py
+   make PY_BIN=/path/to/python           # See PY_BIN note above
+   make PY_BIN=/path/to/python test      # optional, but recommended
+   make PY_BIN=/path/to/python examples  # optional, needs network access
+   ```
+
+   The first `make` also builds the bundled das2C, which downloads the
+   sources of NASA's CDF library.  To use a CDF you already have, set
+   `CDF_INC` and `CDF_LIB` as das2C's own build notes describe.
+
+   To build against some other das2C, a development checkout for example,
+   build that one yourself and name it.  das3py then leaves it alone:
+   ```bash
+   make DAS2C=/path/to/das2C PY_BIN=/path/to/python
    ```
 
 4. Install into your desired python environment.
@@ -177,8 +177,10 @@ using das3py.
 ```python
 import das3
 src = das3.get_source( 'tag:das2.org,2012:site:/uiowa/galileo/pws/survey_electric/das2' )
-dataset = src.get( {'time' : ('1997-05-07T15:00', '1997-05-07T17:00', 4.0)} )[0] 
+header, datasets = src.get( {'time' : ('1997-05-07T15:00', '1997-05-07T17:00', 4.0)} )
 ```
+  * `get()` returns the stream header and a list of datasets.  This
+    instrument sends three, one for each of its frequency bands.
   * Servers come and go.  The federated catalog provides stability for 
     application code by maping URIs to data sources.
   * Browse for URIs using a [das2 catalog](https://das2.org/browse) browser,
@@ -186,6 +188,7 @@ dataset = src.get( {'time' : ('1997-05-07T15:00', '1997-05-07T17:00', 4.0)} )[0]
 
 ### Access quantities by physical dimensions
 ```python
+dataset = datasets[0]
 print(dataset)
 
 vX = dataset['time']['center']
@@ -204,8 +207,15 @@ import matplotlib.pyplot as pyplot
 import matplotlib.colors as colors
 
 fig, ax = pyplot.subplots()
-scaleZ = colors.LogNorm(vmin=vZ.array.min(), vmax=vZ.array.max())
-ax.pcolormesh(vX.array, vY.array, vZ.array, norm=scaleZ, cmap='jet')
+scaleZ = colors.LogNorm(vmin=1e-17, vmax=1e-4)   # One color scale for all bands
+
+for dataset in datasets:
+   vX = dataset['time']['center']
+   vY = dataset['frequency']['center']
+   vZ = dataset['electric']['center']
+   ax.pcolormesh(vX.array, vY.array, vZ.array, norm=scaleZ, cmap='jet')
+
+ax.set_yscale('log')
 pyplot.show() 
 ```
 ## Reporting bugs

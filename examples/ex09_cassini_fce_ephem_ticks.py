@@ -102,7 +102,7 @@ def main(lArgs):
 	
 	# Gather the primary data...
 	
-	fce_src = das3.get_source('site:/uiowa/cassini/mag/electroncyclotron/das2')
+	fce_src = das3.get_source('site:/uiowa/cassini/mag/electroncyclotron')
 	print(fce_src.info())      # Print dev info about the source
 	
 	
@@ -131,7 +131,7 @@ def main(lArgs):
 	ax0.set_xlim(nBeg, nEnd)
 	pyplot.subplots_adjust(bottom=0.25)
 	
-	sEphemId = 'site:/uiowa/cassini/ephemeris/saturn/das2'
+	sEphemId = 'site:/uiowa/cassini/ephemeris/saturn'
 	(sRowLbl, lTicLbls) = dayLabels(sBeg, sEphemId)
 	
 	# Add the ephemeris row header

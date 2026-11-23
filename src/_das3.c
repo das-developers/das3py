@@ -855,6 +855,15 @@ static PyMethodDef pyd2_methods[] = {
 	
 	/* Stuff from py_catalog.c */
 	{"get_node",    pyd2_get_node,    METH_VARARGS, pyd2help_get_node    },
+	{"src_info",    pyd2_src_info,    METH_VARARGS, pyd2help_src_info    },
+	{"src_url",     (PyCFunction)(void(*)(void))pyd2_src_url, METH_VARARGS|METH_KEYWORDS, pyd2help_src_url},
+	{"src_loadable",pyd2_src_loadable,METH_VARARGS, pyd2help_src_loadable},
+	{"mount",       pyd2_mount,       METH_VARARGS, pyd2help_mount       },
+	{"unmount",     pyd2_unmount,     METH_VARARGS, pyd2help_unmount     },
+	{"mounts",      pyd2_mounts,      METH_VARARGS, pyd2help_mounts      },
+	{"seed",        pyd2_seed,        METH_VARARGS, pyd2help_seed        },
+	{"seed_info",   pyd2_seed_info,   METH_VARARGS, pyd2help_seed_info   },
+	{"check",       pyd2_check,       METH_VARARGS, pyd2help_check       },
 	{NULL, NULL, 0, NULL}
 };
 

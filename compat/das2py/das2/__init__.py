@@ -6,7 +6,7 @@ submodules such as das2.dastime and das2.pycdf.const, resolves to the very
 same module object as its das3 counterpart, so there is never a second copy
 of a class to trip an isinstance() check.
 
-This module is the whole of the das2py distribution, which from 3.0.5 on is
+This module is the whole of the das2py distribution, which from 3.0.6 on is
 a transitional package that depends on das3py.  das3py itself never ships
 a das2 directory: two distributions owning the same files would let
 uninstalling either one break the other, and pip has no way to declare the

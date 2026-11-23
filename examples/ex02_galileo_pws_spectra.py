@@ -17,7 +17,7 @@ import matplotlib.dates  as dates
 # Das3py knows to prepend 'tag:das2.org:2012:' automatically when looking for
 # data sources if this prefix is not present.
 
-sId = "site:/uiowa/galileo/pws/survey_electric/das2"
+sId = "site:/uiowa/galileo/pws/survey_electric"
 print("Getting data source definition for %s"%sId)
 src = das3.get_source(sId)
 

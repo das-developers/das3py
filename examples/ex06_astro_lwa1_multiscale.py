@@ -15,7 +15,7 @@ import das3
 # Temporary:  This data source requires authentication, so set it.
 n = das3.auth_load()
 
-sId = 'site:/uiowa/earth/lwa-1/stokes_fullres/das2'
+sId = 'site:/uiowa/earth/lwa-1/stokes_fullres'
 src = das3.get_source(sId)
 print(src.info())
 

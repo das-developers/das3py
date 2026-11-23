@@ -1069,7 +1069,7 @@ class Dataset(object):
 	def rank(self):
 		"""The number of dataset indices, len(shape).  A dataset has no
 		internal indices, those belong to composite variables, see
-		Variable.intrRank.  Read only; until 3.0.5 this was a field that
+		Variable.intrRank.  Read only; until 3.0.6 this was a field that
 		stayed 0."""
 		return len(self.shape)
 

@@ -8,19 +8,28 @@ from os.path import join as pjoin
 from setuptools.command.build_ext import build_ext as _build_ext
 import sys
 
-# Assume das2C is in a parallel directory, built for N_ARCH if no other option
-# is set.  Windows.mak ignores N_ARCH and always builds in build.windows, CMake
-# builds need DAS_LIBDIR.
+# Unless told otherwise das2C is the git submodule in deps/das2C, which pins
+# the das2C commit this das3py goes with, built for N_ARCH.  Windows.mak
+# ignores N_ARCH and always builds in build.windows, CMake builds need
+# DAS_LIBDIR.
+#
+# The path is taken from this file's location, not the current directory.
+# It only exists in a git checkout: an sdist doesn't carry das2C, and
+# 'python -m build' compiles in an unpacked sdist, so there DAS_LIBDIR and
+# DAS_INCDIR have to be set, as the Makefile does.
+sHere = os.path.dirname(os.path.abspath(__file__))
+sSubMod = pjoin(sHere, 'deps', 'das2C')
+
 sCLibDir = os.getenv("DAS_LIBDIR")
 if not sCLibDir:
 	if sys.platform == 'win32':
-		sCLibDir = "../das2C/build.windows"
+		sCLibDir = pjoin(sSubMod, "build.windows")
 	else:
-		sCLibDir = "../das2C/build.%s"%os.getenv("N_ARCH", "")
+		sCLibDir = pjoin(sSubMod, "build.%s"%os.getenv("N_ARCH", ""))
 
 sCHdrDir = os.getenv("DAS_INCDIR")
 if not sCHdrDir:
-	sCHdrDir = "../das2C"
+	sCHdrDir = sSubMod
 
 print('(setup.py) DAS_LIBDIR = %s'%sCLibDir)
 print('(setup.py) DAS_INCDIR = %s'%sCHdrDir)
@@ -39,7 +48,11 @@ if os.path.isfile(sCdfSo):
 	print('(setup.py) Adding %s to module'%sCdfSo)
 	shutil.copy2(sCdfSo, pjoin('.','das3','pycdf'))
 else:
-	print('(setup.py) ERROR: %s missing, build das2C with CDF support'%sCdfSo)
+	print('(setup.py) ERROR: %s missing.'%sCdfSo)
+	print('(setup.py)   das2C has to be built first, with CDF support.  In a git')
+	print('(setup.py)   checkout "make" does that for the das2C in deps/das2C (if that')
+	print('(setup.py)   directory is empty: git submodule update --init).  For a das2C')
+	print('(setup.py)   kept elsewhere set DAS_INCDIR and DAS_LIBDIR.')
 	sys.exit(3)
 
 
@@ -192,7 +205,7 @@ class build_ext(_build_ext):
 setup(
 	cmdclass={'build_ext':build_ext},
 	name="das3py",
-	version="3.0.5rc1",
+	version="3.0.6rc1",
 	ext_modules=[ext],
 	packages=['das3', 'das3.pycdf'],
 	author="C Piker",

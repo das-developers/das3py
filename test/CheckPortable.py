@@ -23,7 +23,7 @@ ROOTS = ('das3', 'compat/das2py/das2', 'scripts')
 # and scratch that never run on 2.7
 TEST_FILES = (
 	'test/TestCatalog.py', 'test/TestDasTime.py', 'test/TestSortMinimal.py',
-	'test/TestRead.py', 'test/TestComposite.py', 'test/TestAlias.py', 'test/TestPkt.py', 'test/TestProps.py', 'test/TestQuantity.py',
+	'test/TestRead.py', 'test/TestComposite.py', 'test/TestAlias.py', 'test/TestSource.py', 'test/TestPkt.py', 'test/TestProps.py', 'test/TestQuantity.py',
 )
 
 ZERO_ARG_SUPER = re.compile(r'\bsuper\(\s*\)')

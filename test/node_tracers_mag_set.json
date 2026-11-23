@@ -1,0 +1,75 @@
+{
+  "type": "SourceSet",
+  "version": "0.1",
+  "coords": {
+    "time": {
+      "label": "Time",
+      "validRange": [
+        "2025-09-26T15:36",
+        "2026-06-03T23:00"
+      ]
+    }
+  },
+  "data": {
+    "ts2_l2_mag_16sps_tss_deltab": {
+      "label": "dB_tss"
+    },
+    "ts2_l2_mag_16sps_gei2000_deltab": {
+      "label": "dB_gei2000"
+    },
+    "ts2_l2_mag_16sps_geo_deltab": {
+      "label": "dB_geo"
+    },
+    "ts2_l2_mag_16sps_sm_deltab": {
+      "label": "dB_sm"
+    },
+    "ts2_l2_mag_16sps_fac_deltab": {
+      "label": "dB_fac"
+    },
+    "ts2_l2_mag_16sps_fvc_deltab": {
+      "label": "dB_fvc"
+    }
+  },
+  "contacts": [
+    {
+      "type": "scientific",
+      "name": "Robert J. Strangeway"
+    }
+  ],
+  "catalog": {
+    "flex": {
+      "type": "HttpStreamSrc",
+      "purpose": "primary-stream",
+      "label": "DasFlex Source",
+      "description": "A successor to das2 DSDFs. Provides multiple output formats and dataset operations along with a user interface definition.",
+      "mime": "application/json",
+      "provides": [
+        "application/vnd.das2.das2stream",
+        "application/vnd.das.stream",
+        "text/vnd.das2.das2stream",
+        "text/vnd.das.stream",
+        "text/csv",
+        "application/x-cdf"
+      ],
+      "urls": [
+        "https://space.physics.uiowa.edu/das/stream/source/tracers/tracers-2/l2/mag_16sps_delta/flex.json"
+      ]
+    },
+    "das2": {
+      "type": "Das2DSDF",
+      "purpose": "primary-stream",
+      "label": "Das2 DSDF",
+      "description": "A variable resolution data source description with optional parameters accessed via a static API",
+      "mime": "text/vnd.das2.das2stream",
+      "provides": [
+        "application/vnd.das2.das2stream"
+      ],
+      "urls": [
+        "https://space.physics.uiowa.edu/das/stream/source/tracers/tracers-2/l2/mag_16sps_delta/das2.d2t"
+      ]
+    }
+  },
+  "name": "TS2_L2_MAG_BDC-16SPS",
+  "label": "MAG DELTA",
+  "title": "TRACERS-2 MAG: Delta B from IGRF, 16 sps Level 2"
+}

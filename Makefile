@@ -1,16 +1,21 @@
 # Simple wrapper around PIP so that higher level tools can invoke using
 # make, make test, make install etc.
 #
-# Asumes the following are set:
+# Variables you may set:
 #
-#  PY_BIN
-#  DAS_INCDIR
-#  DAS_LIBDIR
+#  PY_BIN      The python to build and test with, default: python on the path
+#
+#  DAS2C       A das2C source tree that you build yourself, used in place of
+#              the pinned one in deps/das2C.  Its library is expected in
+#              $(DAS2C)/build.$(N_ARCH).
+#
+#  DAS_INCDIR  Where das2C's headers and library are, for an installed or
+#  DAS_LIBDIR  packaged das2C.  Either one overrides DAS2C for its part.
 
 # Find a way to get this from the manifest.  Until then the version is
 # also in pyproject.toml, setup.py (python 2 builds), das3/__init__.py and
 # compat/das2py/setup.cfg; keep all five in step.
-DAS_PY_VER:=3.0.5rc1
+DAS_PY_VER:=3.0.6rc1
 
 ifeq ($(PY_BIN),)
 PY_BIN=$(shell which python)
@@ -24,25 +29,31 @@ $(error Neither python nor python3 were found, set PY_BIN to the path to your py
 endif
 endif
 
-# Realpath is part of the POSIX standard, hopefully it's available here
-ifeq ($(DAS_INCDIR),)
+# das2C comes from the git submodule in deps/das2C, which pins the exact
+# das2C commit this das3py was written and tested against.  A das2C checkout
+# next door moves whenever someone works on it, so building against one by
+# default meant a passing test said nothing about any das2C release.
+#
+# Naming a das2C of your own, by any of the three variables above, turns the
+# bundled build off; building that das2C is then up to you.
+DAS2C_SUB:=deps/das2C
 
-ifeq ($(DAS2C),)
-DAS_INCDIR:=$(shell realpath $(PWD)/../das2C)
+ifeq ($(DAS2C)$(DAS_INCDIR)$(DAS_LIBDIR),)
+DAS2C_BUNDLED:=yes
+DAS2C:=$(CURDIR)/$(DAS2C_SUB)
 else
-DAS_INCDIR:=$(DAS2C)
-endif 
+DAS2C_BUNDLED:=no
+endif
 
+# Absolute paths, python -m build compiles in a temporary copy of the sources.
+# abspath and not realpath: the bundled library directory doesn't exist until
+# das2C is built, and realpath answers nothing for a missing path.
+ifeq ($(DAS_INCDIR),)
+DAS_INCDIR:=$(abspath $(DAS2C))
 endif
 
 ifeq ($(DAS_LIBDIR),)
-
-ifeq ($(DAS2C),)
-DAS_LIBDIR:=$(shell realpath $(PWD)/../das2C/build.$(N_ARCH))
-else
-DAS_LIBDIR:=$(shell realpath $(DAS2C)/build.$(N_ARCH))
-endif
-
+DAS_LIBDIR:=$(abspath $(DAS2C)/build.$(N_ARCH))
 endif
 
 # Just depend on das2C providing a working libcdf.so and copy it in, don't 
@@ -128,20 +139,76 @@ compat/das2py/setup.cfg \
 compat/das2py/README.md \
 compat/das2py/das2/__init__.py
 
-.PHONY: build dist test install install-compat clean distclean examples
+.PHONY: build dist test install install-compat clean distclean examples das2C
 
 build:dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
+
+# ########################################################################### #
+# The bundled das2C
+
+ifeq ($(DAS2C_BUNDLED),yes)
+
+# An empty deps/das2C means the clone was made without its submodules
+$(DAS2C_SUB)/Makefile:
+	@echo "ERROR: $(DAS2C_SUB) is empty.  Fetch the pinned das2C with:"
+	@echo "          git submodule update --init"
+	@echo "       (git clone --recursive does this for a new clone), or name a"
+	@echo "       das2C of your own with DAS2C=/path/to/das2C"
+	@exit 3
+
+# das2C's makefile decides what is out of date, so ask it every time: after
+# 'git submodule update' moves the pin, the sources changed and nothing here
+# can tell.  When nothing changed das2C leaves the library's time stamp alone
+# and the wheel is not rebuilt.
+#
+# SPICE=no because das3py links none of it, which saves fetching and
+# unpacking CSPICE.  CDF=yes because das2C then builds the CDF library and
+# copies its libcdf.so up beside libdas3.a, where setup.py takes it for
+# pycdf.  CDF_INC and CDF_LIB in the environment point das2C at a CDF you
+# already have; without them it downloads the CDF sources from NASA.
+#
+# This is das2C's whole default build, programs and tests included, since
+# its makefile has no library-only target.  It only costs time once.
+das2C: | $(DAS2C_SUB)/Makefile
+	$(MAKE) -C $(DAS2C_SUB) SPICE=no CDF=yes
+
+$(DAS_LIBDIR)/libdas3.a: das2C ;
+
+$(DAS_LIBDIR)/libcdf.so: das2C ;
+
+else
+
+das2C:
+	@echo "Using the das2C library in $(DAS_LIBDIR), headers in $(if $(DAS_INCDIR),$(DAS_INCDIR),the compiler's default places); not built from here"
+
+endif
+
+# ########################################################################### #
 
 # The static das2C library is linked into the extension, so a das2C rebuild
 # must trigger a wheel rebuild too, or you test against the previous library.
 # Likewise for the libcdf.so das2C copies up, it's packaged for pycdf.
-# The sdist step leaves das3py.egg-info in the source tree.  An old pip
-# (9.x, as on python 3.6 hosts) runs with the current directory on sys.path,
-# sees that egg-info, decides das3py is already installed here, and skips the
+#
+# Wheels only (-w), no source distribution.  A das3py sdist can't be built
+# by whoever downloads it without a das2C they supply themselves, and the
+# ones current setuptools writes carry the libcdf.so that setup.py copies
+# into das3/pycdf, a Linux binary in a "source" package.  With no sdist in
+# dist/, 'twine upload dist/*' can't publish one by accident.  People who
+# want to build get the git repository, which pins das2C.
+#
+# The price of -w is that setuptools compiles here in ./build, not in a
+# fresh copy, and it rebuilds the extension only when src/_das3.c is newer.
+# A changed py_*.h or a new libdas3.a would be linked stale.  So ./build is
+# removed before and after.
+#
+# The build leaves das3py.egg-info in the source tree.  An old pip (9.x, as
+# on python 3.6 hosts) runs with the current directory on sys.path, sees
+# that egg-info, decides das3py is already installed here, and skips the
 # wheel; the test venv then has numpy but no das3.  Remove it right away.
 dist/$(WHEEL_FILE):$(SRC) $(DAS_LIBDIR)/libdas3.a $(DAS_LIBDIR)/libcdf.so build_$(VDIR)/bin/python
-	DAS_INCDIR=$(DAS_INCDIR) DAS_LIBDIR=$(DAS_LIBDIR) build_$(VDIR)/bin/python -m build
-	-rm -r *.egg-info
+	rm -rf build
+	DAS_INCDIR=$(DAS_INCDIR) DAS_LIBDIR=$(DAS_LIBDIR) build_$(VDIR)/bin/python -m build -w
+	-rm -r build *.egg-info
 
 # Same egg-info hazard as above, one directory down
 $(COMPAT_DIST)/$(COMPAT_WHEEL):$(COMPAT_SRC) build_$(VDIR)/bin/python
@@ -169,6 +236,7 @@ test:dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
 	./test_$(VDIR)/bin/python test/TestRead.py
 	./test_$(VDIR)/bin/python test/TestComposite.py
 	./test_$(VDIR)/bin/python test/TestAlias.py
+	./test_$(VDIR)/bin/python test/TestSource.py
 	./test_$(VDIR)/bin/python test/TestPkt.py
 	./test_$(VDIR)/bin/python test/TestProps.py
 	./test_$(VDIR)/bin/python test/TestQuantity.py
@@ -220,6 +288,7 @@ examples:
 	./test_$(VDIR)/bin/python examples/ex09_cassini_fce_ephem_ticks.py 2017-01-02
 	./test_$(VDIR)/bin/python examples/ex10_manual_datasets.py
 	./test_$(VDIR)/bin/python examples/ex11_catalog_listings.py
+	./test_$(VDIR)/bin/python examples/ex12_tracers_mag_delta.py
 	@echo "All examples ran without returning an error code"
 
 
@@ -233,9 +302,15 @@ install:
 install-compat:
 	$(PY_BIN) -m pip install --isolated --no-python-version-warning ./dist/$(WHEEL_FILE) ./$(COMPAT_DIST)/$(COMPAT_WHEEL)
 
+# clean leaves das2C alone, it doesn't depend on the python in use.
+# distclean removes the bundled das2C's build as well, but not the CDF
+# sources it downloaded; for that: make -C deps/das2C distclean
 clean:
-	-rm -r dist $(COMPAT_DIST) test_*_venv *.egg-info
+	-rm -r dist $(COMPAT_DIST) test_*_venv build *.egg-info
 
 distclean:
-	-rm -r dist $(COMPAT_DIST) test_*_venv build_*_venv *.egg-info
+	-rm -r dist $(COMPAT_DIST) test_*_venv build_*_venv build *.egg-info
+ifeq ($(DAS2C_BUNDLED),yes)
+	-if [ -f $(DAS2C_SUB)/Makefile ] ; then $(MAKE) -C $(DAS2C_SUB) clean ; fi
+endif
 

@@ -28,7 +28,7 @@ FILL = -1.0e+31
 # source path is given without one.
 DEF_CATALOG_TAG = 'tag:das2.org,2012:'
 
-__version__ = '3.0.5rc1'
+__version__ = '3.0.6rc1'
 
 # Only the type comments below name Tuple, and those are read statically,
 # so the name need not stay on the package.
@@ -59,6 +59,121 @@ from _das3 import to_epoch;
 import das3.toml as toml
 import das3.pkt as pkt
 import das3.cli as cli
+
+# ########################################################################### #
+# Where catalog branches come from
+
+def _fullName(sPathId):
+	"""Expand das3py's 'site:' and 'test:' shorthands to full catalog names.
+
+	das2C takes names as written and knows no shorthands, so every name
+	headed for _das3 passes through here first.  Anything else, None
+	included, comes back unchanged.
+	"""
+	if sPathId and (sPathId.startswith('site:') or sPathId.startswith('test:')):
+		return DEF_CATALOG_TAG + sPathId
+	return sPathId
+
+def mount(sUrl, sUri):
+	"""Load a catalog branch from a given location instead of the das catalog.
+
+	Paths under sUri load from sUrl and shadow what the das catalog says for
+	them; everything else resolves as usual.  Handy for a development server
+	or a local copy of a branch.  Nothing is fetched until a path under sUri
+	is used, so a location that doesn't answer is found out then, not here.
+
+	May be called at any time.  Mounting at a name already mounted replaces
+	the earlier mount.
+
+	Args:
+		sUrl (str) : Where to load the branch's top node from, a URL or file
+		sUri (str) : The catalog name to put it at, for example 'site:/uiowa'.
+			A name does not end with the separator its children are joined
+			by: 'site:/uiowa', not 'site:/uiowa/'.
+
+	Raises:
+		_das3.Error : if sUrl isn't a location or sUri isn't a name
+	"""
+	_das3.mount(sUrl, _fullName(sUri))
+
+def unmount(sUrlOrUri):
+	"""Remove a catalog mount, by name or by location.
+
+	Args:
+		sUrlOrUri (str) : A name given to mount(), matched exactly, so
+			'site:/uiowa' removes a mount at site:/uiowa and none below it.
+			Or a location, which removes every mount loaded from it.
+
+	Raises:
+		_das3.Error : if nothing matched
+	"""
+	_das3.unmount(_fullName(sUrlOrUri))
+
+def mounts():
+	"""List the catalog mounts.
+
+	Returns:
+		list: (url, uri) tuples in the order mounted.  The uri is the full
+		catalog name, shorthands expanded.  The seed is not a mount, see
+		seed_info().
+	"""
+	return _das3.mounts()
+
+def seed(sUrl=None, sUri=None):
+	"""Choose the node that catalog paths start from.
+
+	In a new process paths start at the root of the das catalog, so every
+	path is a full name ('site:/...' being short for
+	'tag:das2.org,2012:site:/...').  A seed changes that:
+
+	  * seed(None, 'site:/uiowa') starts at that node of the das catalog, so
+	    'juno/wav/survey' is site:/uiowa/juno/wav/survey.  Full names under
+	    the seed still work.  The rest of the catalog can't be reached,
+	    except through mounts.
+
+	  * seed('./uiowa.json', 'site:/uiowa') does the same from a file, which
+	    with mount() is how an offline catalog is put together.  Children
+	    load from the URLs the file lists, so one local file doesn't make
+	    the tree below it local.
+
+	  * seed('./tree.json') makes the file a root: it has no name and paths
+	    are names from it.
+
+	  * seed() goes back to the das catalog root.
+
+	Mounts are kept.  Nothing is fetched until a lookup needs the seed; use
+	check() to find a bad location now.
+
+	Args:
+		sUrl (str, optional) : A URL or file of a catalog node
+		sUri (str, optional) : The catalog name the node has
+
+	Raises:
+		_das3.Error : if sUrl isn't a location or sUri is one
+	"""
+	_das3.seed(sUrl, _fullName(sUri))
+
+def seed_info():
+	"""Where catalog paths start now.
+
+	Returns:
+		tuple: (url, uri).  url is None when the seed comes from the das
+		catalog root built into das2C, which is a list of mirrors rather
+		than one location.  uri is '' when the seed is a root.
+	"""
+	return _das3.seed_info()
+
+def check():
+	"""Load the seed and the top node of every mount now.
+
+	These are otherwise loaded by the first lookup that needs them, which is
+	a poor time to learn that a location was mistyped.  Nodes loaded here
+	are kept, so later lookups cost nothing extra.
+
+	Raises:
+		_das3.Error : naming the first that would not load
+	"""
+	_das3.check()
 
 # ########################################################################### #
 # The basic data reading functions
@@ -158,7 +273,7 @@ def read_http(sUrl, rTimeOut=3.0, sAgent=None):
 #          |                             |
 #      +-----------+             +--------+----------+
 #      |           |             |        |          |
-# HttpStreamSrc  FileAggSrc  SpaseCat  DasCat   Collection
+# HttpStreamSrc  FileAggSrc  SpaseCat  DasCat   SourceSet
 #
 
 def get_node(sPathId, sUrl=None):
@@ -178,7 +293,7 @@ def get_node(sPathId, sUrl=None):
 			URLs must start with one of 'file://', 'http://', or 'https://'.
 
 	Returns:
-		Either a das3.Catalog, das3.Collection or das3.HttpStreamSrc
+		Either a das3.Catalog, das3.SourceSet or das3.HttpStreamSrc
 		object depending on the contents of the file.  If the file does not
 		describe one of these object types or can't be read then None is
 		returned.
@@ -218,8 +333,7 @@ def get_node(sPathId, sUrl=None):
 			                   'http://place.org/catalog/my_source.json')
 	"""
 
-	if sPathId and (sPathId.startswith("site:") or sPathId.startswith('test:')):
-		sPathId = DEF_CATALOG_TAG + sPathId
+	sPathId = _fullName(sPathId)
 
 	bGlobal = None
 	if sUrl:
@@ -251,16 +365,14 @@ def get_node(sPathId, sUrl=None):
 
 	if dDef['_url'] != None: sUrl = dDef['_url']
 
-	# Insure that sPathId has been saved in the _path item
-	if sPathId == None: sPathId = ''
-
-	if dDef['_path'] != sPathId:
-		raise AssertionError("Item ID changed during C-code call")
+	# The node's name is the one das2C reports in '_path', which is not
+	# always the text asked for: below a named seed a relative path comes
+	# back as the full name, see seed().
 
 	# Factory time:
 	if dDef['type'] == 'Catalog':       return Catalog(dDef, 'catalog', FULL, bGlobal)
 	if dDef['type'] == 'HttpStreamSrc': return HttpStreamSrc(dDef, FULL, bGlobal)
-	if dDef['type'] == 'Collection':    return Collection(dDef, FULL, bGlobal)
+	if dDef['type'] == 'SourceSet':     return SourceSet(dDef, FULL, bGlobal)
 	if dDef['type'] == 'FileAggSrc':
 		raise NotImplementedError("FileAggSrc catalog nodes are not supported yet (%s)"%dDef.get('_url', ''))
 
@@ -268,11 +380,40 @@ def get_node(sPathId, sUrl=None):
 	                    dDef['type'], sUrl))
 
 # ########################################################################### #
+def node_dict(sPathId=None, sUrl=None):
+	"""Get a catalog node as a plain dictionary, whatever its type.
+
+	For looking at what a node actually says, for instance to dump it with
+	json.dumps().  das2C finds and loads the node as it does for get_node(),
+	but nothing here depends on the node's type, so nodes das3py has no
+	class for come back too.
+
+	Args:
+		sPathId (str) : The catalog path of the node, 'site:' and 'test:'
+			shorthands included.  None is the top of the catalog.
+
+		sUrl (str, optional) : Load the node from this URL or file instead of
+			finding it through the catalog, as for get_node().
+
+	Returns:
+		dict: The node's JSON content, plus two keys the node itself doesn't
+		have: '_url', where it was loaded from, and '_path', its catalog
+		name.
+
+	Raises:
+		_das3.Error : if the node can't be found or loaded; the message says
+			where the lookup stopped and what is listed there.
+	"""
+	return _das3.get_node(_fullName(sPathId), None, sUrl)
+
+# ########################################################################### #
 def get_source(sPathId, sUrl=None):
 	"""Read a single data source definition from a local or remote files.
 
 	This function is essentially a wrapper around get_node() that makes sure
-	the returned object has the get() method.
+	the returned object has the get() method.  A path that ends at a
+	dataset's set of sources, a SourceSet, gives the one das3py reads best,
+	see SourceSet.source().
 
 	Args:
 		sPathId (str) : Provides the catalog Path ID for the object to load
@@ -288,19 +429,28 @@ def get_source(sPathId, sUrl=None):
 		   URLs must start with one of 'file://', 'http://', or 'https://'.
 
 	Returns:
-		Node: Either a HttpStreamSrc or FileAggSrc object is returned depending
-		on the contents of the file.
+		Source: An HttpStreamSrc, the only source type das3py reads so far.
 
 	Raises:
-		CatalogError : If the file does not describe one of these object types.
+		CatalogError : If the node is not a source, or a set with none das3py
+			can read.
 		_das3.error : If a low-level read error occurs.
 
 	"""
 
 	node = get_node(sPathId, sUrl)
-	if node.__class__.__name__ not in ('Collection','HttpStreamSrc','FileAggSrc'):
-		raise CatalogError("Node type '%s' from '%s' is not a data source object"%(
-		                   node.__class__.__name__, node['_url']))
+
+	# A dataset's set of sources acts as the one das3py reads best.  The pick
+	# comes back as a stub holding only the set's listing entry; load it so
+	# that props has the whole node, as it does for a path that ends at the
+	# source.  das2C keeps the node, so get() doesn't fetch it again.
+	if isinstance(node, SourceSet):
+		node = node.source()
+		node.load()
+
+	if not isinstance(node, Source):
+		raise CatalogError(node.url, "Node type '%s' at %s is not a data source"%(
+		                   node.__class__.__name__, node.path))
 	return node
 
 # ########################################################################### #
@@ -319,7 +469,7 @@ def get_catalog(sPathId=None, sUrl=None):
 		sUrl (str,optional): A string providing a direct load URL.
 			URLs must start with one of 'file://', 'http://', or 'https://'.
 
-	Returs: Either a Catalog or Collection object is returned depending
+	Returs: Either a Catalog or SourceSet object is returned depending
 		   on the contents of the file.
 
 	Raises: 
@@ -328,9 +478,9 @@ def get_catalog(sPathId=None, sUrl=None):
 	"""
 	
 	node = get_node(sPathId, sUrl)
-	if node.__class__.__name__ not in ('Catalog','Collection'):
-		raise CatalogError("Node type '%s' from '%s' is not a data source object"%(
-		                   node.__class__.__name__, node['_url']))
+	if not isinstance(node, Catalog):
+		raise CatalogError(node.url, "Node type '%s' at %s is not a catalog"%(
+		                   node.__class__.__name__, node.path))
 
 	return node
 	

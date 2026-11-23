@@ -4,9 +4,9 @@ Notable changes to das3py (published as das2py through 3.0.4).  Newest
 release first.  This is a summary, not a full history; `git log` has the
 rest.
 
-## [3.0.5] - unreleased
+## [3.0.6] - unreleased
 
-**The first release built on a stable das2C v3 (v3.0.5), and the first
+**The first release built on a stable das2C v3 (v3.0.6), and the first
 under the name das3py.**
 
 These notes cover everything since the last github release for das2py 
@@ -24,7 +24,7 @@ method renames, and what you can read: das3 streams and composite values.
 - **The import package is `das3`** and the C extension is `_das3`.  The
   name is for the das3 stream format, not the Python version.
 
-- **The pip and conda name is `das3py`.**  `das2py` 3.0.5 is a small
+- **The pip and conda name is `das3py`.**  `das2py` 3.0.6 is a small
   transitional package that installs das3py and aliases the old das2
   module name for minimal code breakage.
   ```bash
@@ -58,13 +58,11 @@ method renames, and what you can read: das3 streams and composite values.
   | `DasTime`   | `.from_string()` | `.fromString()`           |
   | `DasTime`   | `.round_doy()`   | `.roundDoy()`             |
   | `Dimension` | `.propEq()`      | `.hasPropVal()`, see also `.hasProp()` |
-  | `Source`    | `.protoGet()`    | `.getProto()`             |
+  | `Source`    | `.protoGet()`    | none, see "Two ways to ask for data" below |
   | `Source`    | `.protoInfo()`   | `.infoProto()`            |
 
   The same `-W error::PendingDeprecationWarning` run that finds old
-  `import das2` lines finds these too.  A `Source` subclass that overrides
-  `protoGet()` or `protoInfo()` must rename its methods, since `get()`
-  calls the new names.
+  `import das2` lines finds these too.
 
   Each module now has an `__all__`, so helpers and stdlib names no longer
   leak into the package namespace.  Code that reached them through
@@ -109,6 +107,27 @@ method renames, and what you can read: das3 streams and composite values.
 - **Nanosecond time.**  TT2000 values convert to `datetime64[ns]` with
   integer arithmetic, and `DasTime` holds TT2000 to the nanosecond.
 
+- **Current catalog nodes.**  Works with `Catalog` 0.5, `SourceSet` 0.2
+  and `HttpStreamSrc` 0.7 nodes.  A path that ends at a `SourceSet` gives
+  the source das3py reads best.  `das3.Collection`, the 2.3 class for a
+  dataset's set of sources, is now another name for `das3.SourceSet`, so
+  `isinstance(node, das3.Collection)` in old code still works.
+
+- **Catalog session calls.**  `das3.mount()`, `unmount()` and `mounts()`
+  put a branch from another server or a local file ahead of the das
+  catalog.  `das3.seed()` and `seed_info()` choose where paths start, and
+  `das3.check()` loads the seed and mounts at once.
+
+- **`das3.node_dict(path)`** returns any catalog node as a plain
+  dictionary.
+
+- **More query forms.**  `Source.get()` also takes das2C's dotted keys, a
+  single time for the span it denotes (`{'time': '2026-05-04'}`), and a
+  list or tuple for a property that holds several values.
+
+- **`examples/ex12_tracers_mag_delta.py`** plots a composite vector
+  variable by component.
+
 ### Changed
 
 - **Values and their descriptions agree.**  das3py converts time points
@@ -136,6 +155,24 @@ method renames, and what you can read: das3 streams and composite values.
   das2C catalog session per process.  It keeps the nodes it loads in
   memory and leaves your home directory alone.
 
+- **das2C reads data sources.**  Source descriptions, query checking and
+  request URLs come from das2C, so new node layouts arrive with a das2C
+  rebuild.  A rejected query raises `ValueError` naming each bad entry.
+  Query keys are the Key column of `src.info()`.
+
+- **Two ways to ask for data.**  `Source.get()` goes through the source's
+  interface and `das3.read_http()` reads a URL; `Source.baseUrls()` is
+  new for building one.  `Source.protoGet()` mixed the two.  It warns and
+  is planned to be removed in 3.1.  `getProto()`, its name in the 3.0
+  pre-releases, is gone.
+
+- **A list in a query is a list of values.**  The 2.3 shortcut
+  `{'electric': ['rm_spikes']}` is written `{'electric': {'rm_spikes': True}}`.
+
+- **Examples are numbered.**  `Source.examples()` returns
+  `(number, label)` pairs and `get()` takes either.  With no query,
+  `get()` uses the first example that produces a das stream.
+
 - **Logins go over https only**, a das2C v3.0.5 policy.  A server asking
   for a login over plain http fails without prompting.  A redirect to
   another host, port or scheme drops the login.  Stored credentials are
@@ -146,11 +183,20 @@ method renames, and what you can read: das3 streams and composite values.
   only code calling that module directly sees.  The stream-level context
   dict is gone.
 
-- **Build.**  das3py requires das2C v3.0.5 or later and no longer builds
+- **Build.**  das3py requires das2C v3.0.6 or later and no longer builds
   against das2C v2.3.  The extension links libdas3 statically and uses
-  the same libcdf as das2C.
+  the same libcdf as das2C.  das2C is now a git submodule in `deps/das2C`,
+  pinned to the release das3py is tested against, and `make` builds it:
+  clone with `git clone --recursive`.  `make DAS2C=/path` uses another.
+  Only wheels are built and published, there is no source distribution;
+  to build das3py yourself, start from the git repository.
 
 ### Fixed
+
+- `get_source()` and `get_catalog()` returned the wrong object for a
+  `Collection`, and their error paths failed.
+
+- `CatalogError` raised with a message alone surfaced as a `TypeError`.
 
 - Empty datasets and empty arrays no longer crash the conversion to
   NumPy.
@@ -188,5 +234,5 @@ method renames, and what you can read: das3 streams and composite values.
 Last release of the 2.x line, on PyPI as das2py 2.3.1.  It remains
 installable with `pip install das2py==2.3.1`.
 
-[3.0.5]: https://github.com/das-developers/das3py/compare/v2.3.1...v3.0.5
+[3.0.6]: https://github.com/das-developers/das3py/compare/v2.3.1...v3.0.6
 [2.3.1]: https://github.com/das-developers/das3py/releases/tag/v2.3.1

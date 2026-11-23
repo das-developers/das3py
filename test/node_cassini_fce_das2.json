@@ -1,0 +1,138 @@
+{
+	"type": "HttpStreamSrc",
+	"version": "0.7",
+	"label": "Das2 Source",
+	"title": "Electron Cyclotron Resonance Frequency",
+	"contacts": [
+		{
+			"type": "scientific",
+			"name": "Prof. Michele Dougherty",
+			"email": "m.dougherty@imperial.ac.uk"
+		},
+		{
+			"type": "technical",
+			"name": "Chris Piker",
+			"email": "chris-piker@uiowa.edu"
+		}
+	],
+	"protocol": {
+		"method": "GET",
+		"baseUrls": [
+			"https://planet.physics.uiowa.edu/das/das2Server?server=dataset&dataset=Cassini/MAG/ElectronCyclotron"
+		],
+		"authorization": {
+			"required": false
+		},
+		"httpParams": {
+			"start_time": {
+				"required": true,
+				"type": "isotime",
+				"comment": "The inclusive lower bound required of the subset, may be smaller at the server's option"
+			},
+			"end_time": {
+				"required": true,
+				"type": "isotime",
+				"comment": "The exclusive upper bound required of the subset, may be larger at the server's option"
+			},
+			"resolution": {
+				"required": false,
+				"type": "real",
+				"units": "s",
+				"comment": "The coarsest time resolution that the server should return, may be finer at the server's option"
+			},
+			"ascii": {
+				"required": false,
+				"type": "boolean",
+				"comment": "Output the text variant of a stream type if available"
+			}
+		}
+	},
+	"interface": {
+		"coords": {
+			"time": {
+				"label": "Time",
+				"props": {
+					"min": {
+						"label": "Minimum",
+						"title": "Minimum time value to stream",
+						"value": null,
+						"set": {
+							"param": "start_time",
+							"required": true
+						}
+					},
+					"max": {
+						"label": "Maximum",
+						"title": "Maximum time value to stream",
+						"value": null,
+						"set": {
+							"param": "end_time",
+							"required": true
+						}
+					},
+					"res": {
+						"label": "Resolution",
+						"value": null,
+						"units": "s",
+						"title": "Maximum time between output points",
+						"description": "The server returns data at or better than the given resolution if possible.  Leave unset to get data at intrinsic resolution, without server side averages.",
+						"set": {
+							"param": "resolution",
+							"required": false
+						}
+					},
+					"units": {
+						"value": "UTC"
+					}
+				},
+				"validRange": [
+					"1999-08-16T00:00",
+					"2017-09-15T10:35"
+				]
+			}
+		},
+		"data": {
+			"fce": {
+				"label": "Fce",
+				"title": "Cyclotron Electron Frequency in Hz"
+			}
+		},
+		"formats": {
+			"das2": {
+				"label": "das2 stream",
+				"mimeTypes": [
+					"application/vnd.das2.das2stream",
+					"text/vnd.das2.das2stream"
+				],
+				"props": {
+					"enabled": {
+						"type": "boolean",
+						"xorGroup": "format",
+						"value": true
+					},
+					"text": {
+						"label": "Text",
+						"title": "Convert output to UTF-8 text",
+						"type": "boolean",
+						"value": false,
+						"set": {
+							"param": "ascii",
+							"pval": "true",
+							"value": true
+						}
+					}
+				}
+			}
+		},
+		"examples": [
+			{
+				"label": "Example 00",
+				"settings": {
+					"coords/time/props/min": "2016-12-11T13:00",
+					"coords/time/props/max": "2016-12-11T23:00",
+					"coords/time/props/res": 18.0
+				}
+			}
+		]
+	}
+}

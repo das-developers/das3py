@@ -21,9 +21,12 @@
 # SOFTWARE.
 """Looking up data sources and sub catalogs of das catalogs"""
 
+import _das3
 from . node import *
+from . node import Node
 from . util import CatalogError
 from . source import *
+from . source import DAS_MIMES
 from . streamsrc import *
 
 # Names the package re-exports.  Helpers, stdlib imports and module
@@ -31,6 +34,7 @@ from . streamsrc import *
 __all__ = [
 	'Catalog',
 	'Collection',
+	'SourceSet',
 ]
 
 
@@ -42,8 +46,8 @@ except NameError:
 # ########################################################################### #
 class Catalog(Node):
 	"""
-	Catalog objects.  May contain other Catalogs, Data Source Collections or
-	SpaseRec objects.
+	Catalog objects.  May contain other Catalogs, SourceSets or SpaseRec
+	objects.
 	"""
 	def __init__(self, dDef, sSubKey, bStub, bGlobal):
 		super(Catalog, self).__init__(dDef, bStub, bGlobal)
@@ -75,25 +79,7 @@ class Catalog(Node):
 				raise CatalogError("'type' missing in sources sub-item %s from %s"%(
 						              	sKey, self.url))
 
-			if dDef['type'] == 'HttpStreamSrc':
-				self.subs[sKey] = HttpStreamSrc(dDef, STUB, self.bGlobal)
-
-			# Factory time:
-			if dDef['type'] == 'Catalog':
-				self.subs[sKey] = Catalog(dDef, 'catalog', STUB, self.bGlobal)
-			elif dDef['type'] == 'HttpStreamSrc':
-				self.subs[sKey] = HttpStreamSrc(dDef, STUB, self.bGlobal)
-			elif dDef['type'] == 'Collection':
-				self.subs[sKey] = Collection(dDef, STUB, self.bGlobal)
-			elif dDef['type'] == 'FileAggSrc':
-				raise NotImplementedError("FileAggSrc catalog nodes are not supported yet (%s)"%sKey)
-
-			# TODO: Add other source types here...
-
-			else:
-				raise NotImplementedError(
-					"Handling of sub-source type %s has not been implemented"%dDef['type']
-				)
+			self.subs[sKey] = _stub(dDef, self.bGlobal)
 
 	def load(self):
 		super(Catalog, self).load()
@@ -130,89 +116,75 @@ class Catalog(Node):
 		return self.subs.keys()
 
 # ########################################################################### #
-class Collection(Catalog):
-	"""
-	Data Source Catalog objects.  May only contain data source definitions
+def _stub(dDef, bGlobal):
+	"""A not yet loaded child of a container.  Node types das3py has no
+	class for become plain Nodes, so a container can always be listed even
+	when some children can't be used from python."""
+	sType = dDef['type']
+	if sType == 'Catalog':       return Catalog(dDef, 'catalog', STUB, bGlobal)
+	if sType == 'SourceSet':     return SourceSet(dDef, STUB, bGlobal)
+	if sType == 'HttpStreamSrc': return HttpStreamSrc(dDef, STUB, bGlobal)
+	return Node(dDef, STUB, bGlobal)
+
+# ########################################################################### #
+class SourceSet(Catalog):
+	"""Several sources for one dataset.
+
+	Each child is a different way to get the same data: a das stream server,
+	a CDF archive, and so on.  source() picks the one das3py reads best, so a
+	path ending at a SourceSet works with get_source() like a path ending at
+	the source itself.
 	"""
 
 	def __init__(self, dDef, bStub, bGlobal):
 
-		if ('type' not in dDef) or (dDef['type'] != 'Collection'):
+		if ('type' not in dDef) or (dDef['type'] != 'SourceSet'):
 			raise CatalogError("PyClass, data mismatch, expected 'type' to be "+\
-			                   "'Collection' not '%s'"%dDef)
+			                   "'SourceSet' not '%s'"%dDef.get('type'))
 
-		super(Collection, self).__init__(dDef, 'sources', bStub, bGlobal)
+		super(SourceSet, self).__init__(dDef, 'catalog', bStub, bGlobal)
 
-	def _load_stubs(self):
-		# Overload _load_stub so that sub-items can't be catalog types
-		self.subs = {}
-		for sKey in self.props[self.sSubKey]:
+	def source(self):
+		"""The child source das3py reads by default.
 
-			dDef = self.props[self.sSubKey][sKey]
-			if 'type' not in dDef:
-				raise CatalogError("'type' missing in sources sub-item %s from %s"%(
-						              	sKey, self.url))
+		das2C lists which children it can load and each child says which MIME
+		types it provides.  Which to use is das3py's choice, not das2C's: the
+		first of das3 binary, das3 text, das2 binary and das2 text that any
+		loadable child provides, preferring a child whose purpose is
+		'primary-stream' and then node order.  A loadable child that doesn't
+		say what it provides is taken last.
 
-			# Assign a name based on how this appeared in the subitems
-			sSep = '/'
-			if 'separator' in self.props:
-				if self.props['separator'] == None: sSep = ''
-				else: sSep = self.props['separator']
+		Returns: A Source, not yet loaded.
 
-			dDef['_path'] = "%s%s%s"%(self.props['_path'], sSep, sKey)
-
-			if dDef['type'] == 'HttpStreamSrc':
-				self.subs[sKey] = HttpStreamSrc(dDef, STUB, self.bGlobal)
-			elif dDef['type'] == 'FileAggSrc':
-				raise NotImplementedError("FileAggSrc catalog nodes are not supported yet (%s)"%sKey)
-			else:
-				raise NotImplementedError(
-					"Illegal sub item type %s in container from %s"%(dDef['type'],
-					self.props['_url'])
-				)
-
-	def source(self, sPurpose="primary", sPrefType="HttpStreamSrc", sPrefConv="das2"):
-		"""Get a query interfaces for a data collection
-
-		Returns:
-			(dict) A dictionary describing the interfaces available for this
-			    data collection.
+		Raises: CatalogError if no loadable child provides a das stream.
 		"""
+		if self.bStub: self.load()
 
-		self.load()
+		sLoc = self.path if self.bGlobal else self.url
+		lNames = [s for s in _das3.src_loadable(sLoc) if s in self.subs]
+		dDefs = self.props[self.sSubKey]
 
-		dGroups = {}
+		def _pick(lHit):
+			lPrime = [s for s in lHit if dDefs[s].get('purpose') == 'primary-stream']
+			return self.subs[(lPrime or lHit)[0]]
 
+		for sMime in DAS_MIMES:
+			lHit = [s for s in lNames if sMime in (dDefs[s].get('provides') or [])]
+			if lHit: return _pick(lHit)
 
+		lHit = [s for s in lNames if not dDefs[s].get('provides')]
+		if lHit: return _pick(lHit)
 
-
-# Group    Name       Units     Default      Range               Sources
-# -----    -------    -------   ----------   -----------------   -------
-# Time:    maximum    isotime   2016-05-02   2011-08-05 to now   das2
-#          minimum    isotime   2016-05-01   2011-08-05 to now   das2
-#          interval   seconds   300                              das2
-#
-# Efield:  units                V m**-1      raw,                das2
-#                                            V m**-1,
-#                                            V**2 m**2 Hz**-1,
-#                                            V m**-2 H**-1
-#
-# Format:  das2_text            false        boolean             das2
-#
-# Reader:  negative             true         boolean             das2
-#          noise                true         boolean             das2
-#          pls                  true         boolean             das2
-#          threshold            true         boolean             das2
+		lHave = ["%s (%s)"%(s, ', '.join(dDefs[s].get('provides') or [])) for s in self.subs]
+		raise CatalogError(self.url,
+			"No source in %s provides a das stream, it has: %s"%(self.path, '; '.join(lHave))
+		)
 
 
-
-
-
-
-
-
-
-
-
-
-
+# The das2py 2.3 name.  In the 2018 catalog layout a dataset's set of sources
+# was a 'Collection' node; SourceSet nodes took their place and nothing serves
+# the old ones.  An alias and not a subclass, so that isinstance(node,
+# Collection) in an old script is true for the nodes it gets today.  It can't
+# warn the way the renamed methods do, a name is not a call.  Keep it for a
+# while: 'import das2' scripts reach it as das2.Collection.
+Collection = SourceSet

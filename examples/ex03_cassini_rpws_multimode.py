@@ -17,7 +17,7 @@ import matplotlib.ticker as ticker
 # telemetry alotment and on-board computing power.  This example collapses
 # all the provided datasets to a single scatter set for plotting
 
-sId = "site:/uiowa/cassini/rpws/survey/das2"
+sId = "site:/uiowa/cassini/rpws/survey"
 print("Getting data source definition for %s"%sId)
 src = das3.get_source(sId)
 

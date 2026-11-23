@@ -33,7 +33,7 @@ def test_load_data(tBeg, tEnd, SrcId):
    """tests whether data exists for the given time range to avoid IndexError issue."""
    try:
       src = das3.get_source(SrcId)
-      dQuery = {'time':(tBeg, tEnd), 'hfr_i':True}
+      dQuery = {'time':(tBeg, tEnd), 'dataset':'hfr_I'}
       (hdr, lDs) = src.get(dQuery)
       dsReal = lDs[0]
    
@@ -51,13 +51,13 @@ def getIQ(sSrcId, sBeg, sEnd):
    src = das3.get_source(sSrcId)
 
    print("Getting Reals from %s to %s"%(sBeg, sEnd))
-   dQuery = {'time':(sBeg, sEnd), 'hfr_i':True}
+   dQuery = {'time':(sBeg, sEnd), 'dataset':'hfr_I'}
    (hdr, lDs) = src.get(dQuery)
    dsReal = lDs[0]
    print(dsReal)
 
    print("Getting Imaginary from %s to %s"%(sBeg, sEnd))
-   dQuery = {'time':(sBeg, sEnd), 'hfr_q':True}
+   dQuery = {'time':(sBeg, sEnd), 'dataset':'hfr_Q'}
    (hdr, lDs) = src.get(dQuery)
    dsImg = lDs[0]
    #print(dsImg)
@@ -184,7 +184,7 @@ def main(lArgs):
    sEnd = '2016-12-11T16:29'
    nDFT = 512
    nSlide = 128
-   sSrcId = 'site:/uiowa/juno/wav/uncalibrated/hrs/das2'
+   sSrcId = 'site:/uiowa/juno/wav/uncalibrated/hrs'
    
    # Testing Das2 streams answer (dataset or not for the wanted date)
    if test_load_data(sBeg, sEnd, sSrcId) == False:

@@ -57,6 +57,17 @@ except NameError:
 
 perr = sys.stderr.write
 
+# The streams das3py can parse, most preferred first: das3 binary, das3
+# text, das2 binary, das2 text.  This order is das3py's policy for choosing
+# among a dataset's sources and examples; das2C leaves that choice to the
+# program, which knows what it wants.
+DAS_MIMES = (
+	'application/vnd.das.stream',
+	'text/vnd.das.stream',
+	'application/vnd.das2.das2stream',
+	'text/vnd.das2.das2stream',
+)
+
 # ########################################################################### #
 class Source(Node):
 	"""This class exists to define the interface for Source objects and to
@@ -82,20 +93,15 @@ class Source(Node):
 		"""
 		raise NotImplementedError("Derived class needs to implement example()")
 
-	def getProto(self, dConfig, verbose=False):
-		raise NotImplementedError("Derived class needs to implement getProto()")
-
 	def infoProto(self):
 		raise NotImplementedError("Derived class needs to implement infoProto()")
 
 	# The 2.3 names, which das2py 2.3's examples called.  Removal planned for 3.1.
 	def protoGet(self, dConfig, verbose=False):
-		"""Deprecated spelling of getProto()"""
-		warnings.warn(
-			"Source.protoGet() is deprecated, use Source.getProto()",
-			PendingDeprecationWarning, stacklevel=2
-		)
-		return self.getProto(dConfig, verbose)
+		"""Deprecated, with no renamed twin: build the URL and give it to
+		das3.read_http().  Derived classes that can still honor it warn and
+		do so until 3.1."""
+		raise NotImplementedError("Derived class needs to implement protoGet()")
 
 	def protoInfo(self):
 		"""Deprecated spelling of infoProto()"""
@@ -190,18 +196,16 @@ class Source(Node):
 	        query = {'time':('2017-01-01', '2017-01-02'), 'electric':{'rm_spikes':True}}
 	        source.get(query)
 	        	   
-	   * Boolean options can be set to True just by providing thier name
-	     alone in a list::
-		  
-	        query = {'time':('2017-01-01', '2017-01-02'), 'electric':['rm_spikes']}
+	   * A property that holds several values, shown with a list type by
+	     :meth:`~info`, takes a list or tuple::
+
+	        query = {'time':('2017-01-01', '2017-01-02'), 'lfdr':['Ex', 'Ew']}
 	        source.get(query)
-	   
-	   * And the list can be omitted if it contains only a single
-	     item::
-		  
-	        query = {'time':('2017-01-01', '2017-01-02'), 'electric':'rm_spikes'}
-	        source.get(query)
-	   
+
+	     A list is always the values of the one key it is given to.  In
+	     das2py 2.3 a list given to a variable named options to switch on,
+	     {'electric':['rm_spikes']}; write {'electric':{'rm_spikes':True}}.
+
 	   * Finally Variables with the 'enabled' aspect may have thier
 	     enabled state changed by using True or False in the place of the
 	     entire aspect dictionary.  For example assume a source that can

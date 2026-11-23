@@ -20,8 +20,8 @@ def _testOldNames(das2):
 	nBad = 0
 
 	class _Src(das2.Source):
-		# A stand-in for a catalog source, no network
-		def getProto(self, dConfig, verbose=False): return ('get', dConfig, verbose)
+		# A stand-in for a catalog source, no network.  protoGet() is not a
+		# rename, it needs a real source node; TestSource.py covers it.
 		def infoProto(self): return 'info'
 	src = _Src.__new__(_Src)   # skip Node construction, it wants a catalog dict
 
@@ -36,8 +36,6 @@ def _testOldNames(das2):
 		                        das2.DasTime.fromString('2026-09-13')),
 		('DasTime.round_doy',   lambda: t.round_doy(t.MILLISEC), t.roundDoy(t.MILLISEC)),
 		('Dimension.propEq',    lambda: dim.propEq('scaleType', 'log'), True),
-		('Source.protoGet',     lambda: src.protoGet({'a':1}, verbose=True),
-		                        ('get', {'a':1}, True)),
 		('Source.protoInfo',    lambda: src.protoInfo(), 'info'),
 	)
 	for (sName, fOld, expect) in lCases:
@@ -77,6 +75,7 @@ def main(argv):
 		('subpackage',       das2.pycdf.const,     das3.pycdf.const),
 		('class',            das2.DasTime,         das3.DasTime),
 		('class via from',   DsViaAlias,           das3.Dataset),
+		('2.3 class name',   das2.Collection,      das3.SourceSet),
 		('extension func',   das2._das3.read_file, das3._das3.read_file),
 	)
 	for (sWhat, a, b) in lPairs:

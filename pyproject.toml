@@ -1,6 +1,6 @@
 [project]
 name = "das3py"
-version = "3.0.5rc1"
+version = "3.0.6rc1"
 dependencies = [ "numpy>=1.16.6", "lxml" ]
 description = "An efficient space physics data client for python"
 readme = "README.md"
