@@ -78,12 +78,10 @@ PY_ABI_TOK:=$(shell $(PY_BIN) -c "import sys; f=getattr(sys,'abiflags',None); pr
 
 WHEEL_FILE:=das3py-$(DAS_PY_VER)-cp$(PY_VER_TOK)-cp$(PY_VER_TOK)$(PY_ABI_TOK)-linux_x86_64.whl
 
-# The transitional das2py distribution: just the 'import das2' alias plus a
-# dependency on das3py.  Pure python, one wheel for both interpreters.  It
-# builds into its own directory so that 'twine upload dist/*' publishes
-# das3py alone; das2py must not reach PyPI before the das3py it requires.
+# Where the das2py name's last release, a pointer to das3py, is built (see
+# compat/das2py).  Kept apart from dist/ so it can't be uploaded with
+# das3py by mistake.
 COMPAT_DIST:=dist_compat
-COMPAT_WHEEL:=das2py-$(DAS_PY_VER)-py2.py3-none-any.whl
 
 # One pair of venvs per interpreter (build_py312_venv, test_py27_venv, ...),
 # not per major version.  A home directory shared between machines with
@@ -136,15 +134,10 @@ das3/pycdf/__init__.py \
 das3/pycdf/const.py \
 das3/pycdf/LICENSE.md
 
-COMPAT_SRC:= \
-compat/das2py/pyproject.toml \
-compat/das2py/setup.cfg \
-compat/das2py/README.md \
-compat/das2py/das2/__init__.py
 
-.PHONY: build dist test install install-compat clean distclean examples das2C pypi
+.PHONY: build dist test install clean distclean examples das2C pypi
 
-build:dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
+build:dist/$(WHEEL_FILE)
 
 # ########################################################################### #
 # The bundled das2C
@@ -213,24 +206,17 @@ dist/$(WHEEL_FILE):$(SRC) $(DAS_LIBDIR)/libdas3.a $(DAS_LIBDIR)/libcdf.so build_
 	DAS_INCDIR=$(DAS_INCDIR) DAS_LIBDIR=$(DAS_LIBDIR) build_$(VDIR)/bin/python -m build -w
 	-rm -r build *.egg-info
 
-# Same egg-info hazard as above, one directory down
-$(COMPAT_DIST)/$(COMPAT_WHEEL):$(COMPAT_SRC) build_$(VDIR)/bin/python
-	build_$(VDIR)/bin/python -m build -o $(COMPAT_DIST) compat/das2py
-	-rm -r compat/das2py/*.egg-info
-
 build_$(VDIR)/bin/python:
 	$(PY_BIN) -m $(VENV_MOD) build_$(VDIR)
 	build_$(VDIR)/bin/python -m pip install $(PY_VER_WARN) build
 
-# Both wheels go in together so pip satisfies das2py's das3py requirement
-# from the local build, not from PyPI.
-test:dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
+test:dist/$(WHEEL_FILE)
 	# Creating temporary environment for testing
 	$(PY_BIN) -m $(VENV_MOD) test_$(VDIR)
-	# A reused venv may hold a das2py from before the split that owns das3/
-	# itself, upgrading that after das3py goes in would delete das3py's files
+	# A reused venv may hold a das2py, which owns das_verify (and das3/
+	# through 3.0rc7); removing it after das3py goes in deletes those files
 	./test_$(VDIR)/bin/python -m pip uninstall -y --isolated $(PY_VER_WARN) das2py das3py
-	./test_$(VDIR)/bin/python -m pip install --isolated $(PY_VER_WARN) dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
+	./test_$(VDIR)/bin/python -m pip install --isolated $(PY_VER_WARN) dist/$(WHEEL_FILE)
 	@./test_$(VDIR)/bin/python -c 'import numpy;print("===================================");print("  Numpy Runtime Version is %s"%numpy.__version__);		print("===================================")'
 	# The test list itself is shared with the cibuildwheel builds
 	PY=$(CURDIR)/test_$(VDIR)/bin/python bash test/wheel_tests.sh
@@ -278,15 +264,11 @@ examples:
 	@echo "All examples ran without returning an error code"
 
 
-# Installs das3py only.  The das2 alias is opt-in, as it is for pip users:
-# make install-compat.  Removing an old das2py first matters, since 2.x and
-# 3.0.4 own a das2 directory and a das_verify script.
+# Removing an old das2py first matters: 2.x and 3.0.4 own a das2 directory
+# and a das_verify script, which das3py installs too.
 install:
 	$(PY_BIN) -m pip uninstall -y --isolated --no-python-version-warning das2py das3py
 	$(PY_BIN) -m pip install --isolated --no-python-version-warning ./dist/$(WHEEL_FILE)
-
-install-compat:
-	$(PY_BIN) -m pip install --isolated --no-python-version-warning ./dist/$(WHEEL_FILE) ./$(COMPAT_DIST)/$(COMPAT_WHEEL)
 
 # ########################################################################### #
 # Wheels for PyPI

@@ -18,7 +18,9 @@ python -m pip install das3py
 
 The PyPI packages are pre-built for Linux on x86_64, for Python 2.7 and
 3.9 through 3.15.  They need glibc 2.26 or newer (RHEL 8, Ubuntu 18.04
-and later) and pip 20.3 or newer.  If pip is older, upgrade it first:
+and later) and pip 20.3 or newer.  The 2.7 package is for UCS-4 builds of
+Python, as Linux distributions ship; a 2.7 built from source needs
+`--enable-unicode=ucs4`.  If pip is older, upgrade it first:
 
 ```bash
 python -m pip install -U pip
@@ -53,7 +55,10 @@ src = das3.get_source( 'tag:das2.org,2012:site:/uiowa/galileo/pws/survey_electri
 header, datasets = src.get( {'time' : ('1997-05-07T15:00', '1997-05-07T17:00', 4.0)} )
 ```
   * `get()` returns the stream header and a list of datasets.  This
-    instrument sends three, one for each of its frequency bands.
+    instrument sends three, one for each of its frequency bands.  Each
+    has the same three physical dimensions: time, frequency and electric
+    field.
+  * `site:/...` is short for `tag:das2.org,2012:site:/...`.
   * Servers come and go.  The federated catalog provides stability for 
     application code by mapping URIs to data sources.
   * Browse for URIs using a [das2 catalog](https://das2.org/browse) browser,
@@ -74,7 +79,7 @@ vZ = dataset['electric']['center']
   * Array dimensions are not confused with physical dimensions. Dataset meaning is
     not tied to any particular array morphology.
 
-### Use Matplotlib to generate an image.
+### Use Matplotlib to generate an image
 ```python
 import matplotlib.pyplot as pyplot
 import matplotlib.colors as colors
@@ -127,12 +132,13 @@ dasdevelopers channel still has the older das2py 3.0.4.
 The short version, for people upgrading from 2.3:
 
 * **The package is `das3` now.**  It reads das3 streams.
-  `import das2` keeps working as an alias, installed by the das2py
-  transitional package which just points at this module.  Existing
-  das2py function names are aliased as needed in das3py, so old and
-  new code mix without a fuss.  The pip name is now
-  `das3py`.  Python 2.7 and 3.x are both supported, `das3` isn't a
+  Code that says `import das2` needs to say `import das3`.  The pip
+  name is now `das3py`.  Python 2.7 and 3.x are both supported, `das3` isn't a
   reference to the interpreter version.
+
+* **Reads return the stream header too.**  `Source.get()` and the
+  `read_*()` functions return a tuple, `(stream_header, datasets)`, not
+  just a list of datasets, so their call sites change.
 
 * **Composite values.**  Vectors, rotation matrices, quaternions and complex
   pairs come through as one variable, with an internal shape.  So a
@@ -155,7 +161,7 @@ The short version, for people upgrading from 2.3:
   few methods were renamed to match the rest: `DasTime.fromString`,
   `DasTime.roundDoy`, `Dimension.hasProp` and `hasPropVal` (replacing
   `propEq`) and `Source.infoProto`.  The 2.3 names still work
-  and warn, so old scripts keep running.  `Quantity.to_value` keeps its
+  and warn.  `Quantity.to_value` keeps its
   snake_case on purpose, since it's source compatible with AstroPy's 
   Quantities.
 
@@ -172,27 +178,45 @@ As of version 3.0 the package is `das3`, named for the das3 stream format,
 and as of 3.0.6 it is distributed as `das3py`.  It runs on Python 2.7 and
 3.x alike.
 
-The `das2py` name on PyPI is now a small transitional package.  Upgrading
-it installs das3py and adds a `das2` alias, so `import das2` keeps working
-and returns the same modules as `import das3`.  Note that das3py on its own
-does not provide `import das2`.
+Most das2py code needs two changes:
 
-```bash
-python -m pip install -U das2py   # existing installs: das3py plus the alias
-python -m pip install das3py      # new code: das3 only
-```
+1. **The module name.**  `import das2` becomes `import das3`, and
+   `das2.DasTime` becomes `das3.DasTime`, and so on.  Don't change every
+   "das2" in a file: catalog names such as
+   `'tag:das2.org,2012:site:/...'` and das2.org URLs stay as they are.
 
-If you install das3py next to an **old** das2py **2.x** instead of upgrading it,
-remove the old one first (`pip uninstall das2py`), as both provide a
-`das_verify` command.
+2. **Reading data returns the stream header too.**
+   ```python
+   ds_list = src.get()                 # das2py 2.3
+   stream_hdr, ds_list = src.get()     # das3py
+   ```
+   The same goes for `read_file()`, `read_http()` and `read_cmd()`, which
+   now raise an exception on failure instead of returning `None`.
 
-The alias raises a `PendingDeprecationWarning`, which Python hides by
-default.  To find the places in a project that still use the old name, run
-it with that warning promoted to an error:
+Code written for the das2py 3.0.4 conda package needs only the first
+change.
+
+A few 2.3 method names changed too.  The old names still work, with a
+`PendingDeprecationWarning` that Python hides by default; see the
+[CHANGELOG](https://github.com/das-developers/das3py/blob/main/CHANGELOG.md).  To find them, run a script with the warning promoted to an
+error:
 
 ```bash
 python -W error::PendingDeprecationWarning your_script.py
 ```
+
+Data sources in the das catalog have also changed their query parameters
+since 2.3.  `print(src.info())` lists the ones a source takes now.
+
+Note that das2py and das3py both include the `das_verify` command.  If
+you uninstall das2py, reinstall das3py to replace it:
+
+```bash
+python -m pip install --force-reinstall --no-deps das3py
+```
+
+The old das2py releases stay on PyPI, so scripts that pin `das2py<3` keep
+working.
 
 ## Building and Installing from Source on Linux
 
@@ -208,7 +232,7 @@ to build das3py and all dependencies:
    ```
    Debian or compatible (Ubuntu)
    ```bash
-   apt install gcc git make curl libexpat-dev libfftw3-dev libssl-dev python3-dev
+   apt install gcc git make curl libexpat-dev libfftw3-dev libssl-dev python3-dev python3-venv
    ```
 
 2. Get the source, along with the pegged das2C version.
@@ -253,14 +277,14 @@ to build das3py and all dependencies:
    make PY_BIN=/path/to/python install
    ```
 
+The PyPI packages are built in a manylinux container with `make pypi`.
+The Makefile explains what that needs.
+
 ## Windows and macOS
 
 das3py has been built on Windows and macOS before, and `setup.py` has
 branches for both, but this release has not been tested on either.  If
 you need it there, please ask on the issue tracker.
-
-The PyPI packages are built in a manylinux container with `make pypi`.
-The Makefile explains what that needs.
 
 ## Reporting bugs
 Please use the github.com [issue tracker](https://github.com/das-developers/das3py/issues) 

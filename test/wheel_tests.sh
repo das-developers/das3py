@@ -1,12 +1,12 @@
 #!/bin/bash
-# The das3py test list, run against an installed das3py and das2py shim.
+# The das3py test list, run against an installed das3py.
 # Both 'make test' and cibuildwheel's test-command call this, so there is
 # one list to keep up.
 #
-# Run from a directory holding test/, das3/ and compat/: the repository
-# root, or cibuildwheel's test directory (see test-sources in
-# pyproject.toml).  The scripts open test/... by relative path, and
-# CheckPortable reads das3/ and compat/ as source text.  The package under
+# Run from a directory holding test/ and das3/: the repository root, or
+# cibuildwheel's test directory (see test-sources in pyproject.toml).  The
+# scripts open test/... by relative path, and CheckPortable reads das3/ as
+# source text.  The package under
 # test is still the installed one: python puts a script's own directory on
 # sys.path, not the current one.
 #
@@ -27,12 +27,12 @@ BIN=$(dirname "$(command -v "$PY")")
 "$PY" -c '
 import sys, os
 sys.path = [p for p in sys.path if p not in ("", ".", os.getcwd())]
-import das3, _das3, das2
-print("das3  %s\n_das3 %s\ndas2  %s" % (das3.__file__, _das3.__file__, das2.__file__))
+import das3, _das3
+print("das3  %s\n_das3 %s" % (das3.__file__, _das3.__file__))
 '
 
 for t in CheckPortable TestCatalog TestDasTime TestSortMinimal TestRead \
-	TestComposite TestAlias TestSource TestPkt TestProps TestQuantity
+	TestComposite TestSource TestPkt TestProps TestQuantity
 do
 	"$PY" test/$t.py
 done

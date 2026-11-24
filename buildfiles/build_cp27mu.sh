@@ -50,11 +50,11 @@ export DAS_EXPAT_LIB=/usr/local/lib/libexpat.a
 auditwheel repair -w "$OUT" "$WORK"/dist/das3py-*-cp27-cp27mu-linux_x86_64.whl
 WHL=$(ls "$OUT"/das3py-*-cp27-cp27mu-manylinux*.whl)
 
-# Test in a second, clean venv, the shim beside it, as make test does
+# Test in a second, clean venv, as make test does
 python2 -m virtualenv "$WORK/tst"
 TPY=$WORK/tst/bin/python
 "$TPY" -m pip install --no-python-version-warning --upgrade "pip>=20.3.4,<21"
-"$TPY" -m pip install --no-python-version-warning "$WHL" "$PROJ/compat/das2py"
+"$TPY" -m pip install --no-python-version-warning "$WHL"
 cd "$PROJ"
 PY=$TPY bash test/wheel_tests.sh
 

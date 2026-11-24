@@ -11,8 +11,7 @@ under the name das3py.**
 
 These notes cover everything since the last github release for das2py 
 which was 2.3.1 (2023-11-21). Some conda and PyPI packages were released
-from the pre-3.0 codebase, those are addressed by the transitionary 
-das2py described below.
+from the pre-3.0 codebase; see *Upgrading from das2py* below.
 
 das2py was the first v3 style module, written ahead of das2C v3.0.  das2C
 has since caught up, so most of the application interface from 2.3 is
@@ -24,26 +23,19 @@ method renames, and what you can read: das3 streams and composite values.
 - **The import package is `das3`** and the C extension is `_das3`.  The
   name is for the das3 stream format, not the Python version.
 
-- **The pip and conda name is `das3py`.**  `das2py` 3.0.6 is a small
-  transitional package that installs das3py and aliases the old das2
-  module name for minimal code breakage.  It requires `das3py<3.1`, so
-  old scripts stay on the 3.0 series, where the 2.3 names still work.
-  ```bash
-  python -m pip install -U das2py   # existing installs: das3py plus the alias
-  python -m pip install das3py      # new code: das3 only
-  ```
+- **The pip and conda name is `das3py`.**  There is no `das2` alias:
+  `import das2` becomes `import das3`, and `das2.` becomes `das3.`.
+  Catalog names and URLs that contain `das2.org` stay as they are.
 
-- **The `das2` alias warns.**  It raises a `PendingDeprecationWarning`,
-  which Python hides by default.  To find old imports, run:
-  ```bash
-  python -W error::PendingDeprecationWarning your_script.py
-  ```
+- **Reading data returns the stream header too.**  `Source.get()`,
+  `read_file()`, `read_http()` and `read_cmd()` return
+  `(stream_hdr, ds_list)`; 2.3 returned only the list.  They raise an
+  exception on failure instead of returning `None`.  (das2py 3.0.4 on
+  conda already worked this way.)
 
-- **If you install das3py into the same virtual environment with das2py
-  instead of upgrading das2py, uninstall it first.** Old versions own files
-  that das3py now installs, including the `das_verify` command, and pip lets
-  the second install overwrite them.  Uninstalling the old package later
-  would then *delete* das3py's copies.
+- **das2py and das3py both include `das_verify`.**  If you uninstall
+  das2py, reinstall das3py to replace it:
+  `python -m pip install --force-reinstall --no-deps das3py`.
 
 - **Python 2.7 and 3.6 and up are supported by das3py**, with NumPy 1.x or 2.x. 
   There is *no* plan to drop python2.7 for the foreseeable future.
@@ -62,8 +54,10 @@ method renames, and what you can read: das3 streams and composite values.
   | `Source`    | `.protoGet()`    | none, see "Two ways to ask for data" below |
   | `Source`    | `.protoInfo()`   | `.infoProto()`            |
 
-  The same `-W error::PendingDeprecationWarning` run that finds old
-  `import das2` lines finds these too.
+  To find them, run:
+  ```bash
+  python -W error::PendingDeprecationWarning your_script.py
+  ```
 
   Each module now has an `__all__`, so helpers and stdlib names no longer
   leak into the package namespace.  Code that reached them through

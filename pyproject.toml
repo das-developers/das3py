@@ -55,15 +55,9 @@ build-backend = "setuptools.build_meta"
 [tool.cibuildwheel]
 build = "cp3*-manylinux_x86_64"
 skip = "cp3*t-*"
-# das3/ and compat/ ride along for CheckPortable, which reads them as
-# source, and so the das2py shim can be installed beside the wheel for
-# TestAlias.  The shim's das3py requirement is met by the wheel already in
-# the test venv, so nothing is fetched for it but setuptools.
-test-sources = ["test", "das3", "compat"]
-test-command = [
-	"python -m pip install ./compat/das2py",
-	"bash test/wheel_tests.sh",
-]
+# das3/ rides along for CheckPortable, which reads it as source
+test-sources = ["test", "das3"]
+test-command = "bash test/wheel_tests.sh"
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
