@@ -42,13 +42,21 @@ aX = numpy.ma.concatenate(lX)
 aY = numpy.ma.concatenate(lY)
 aZ = numpy.ma.concatenate(lZ)
 
-(fig, ax0) = pyplot.subplots()
+# Wider than matplotlib's default 6.4 x 4.8 inches.  A day of spectra is
+# scrunched at that size, the date labels run into each other, and the
+# data source's title doesn't fit.
+(fig, ax0) = pyplot.subplots(figsize=(12, 5))
 
 print("Plotting..")
 clrscale = colors.LogNorm(vmin=aZ.min(), vmax=aZ.max())
-hb = ax0.hexbin(aX, aY, aZ, yscale='log', gridsize=(400, 200),
+hb = ax0.hexbin(aX, aY, aZ, yscale='log', gridsize=(400, 100),
                 cmap='jet', norm=clrscale )
 
+# Draw to the edges of the data in time, and start the frequency axis at
+# 0.8 Hz.  The few channels below that are far apart on a log axis and
+# would show as thin separate lines.
+ax0.set_xlim(aX.min(), aX.max())
+ax0.set_ylim(0.8, aY.max())
 
 cbar = fig.colorbar(hb, ax=ax0)
 

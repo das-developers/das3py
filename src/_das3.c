@@ -819,7 +819,13 @@ static PyObject* pyd2_can_merge(PyObject* self, PyObject* args)
 /* ************************************************************************* */
 /* Include Object Defs */
 
+/* DAS_NO_DFT is for a das2C built without its transform code, DFT=no in
+   das2C's makefiles, which also leaves the FFTW library (GPL) out of the
+   link.  The module then has no Dft and Psd types of its own, and das3
+   supplies the ones in das3/dft.py, which use numpy. */
+#ifndef DAS_NO_DFT
 #include "py_dft.h"
+#endif
 #include "py_builder.h"
 #include "py_catalog.h" /* After py_builder.c, uses g_pMgr from py_builder.c */
 
@@ -908,11 +914,13 @@ PyMODINIT_FUNC PyInit__das3(void){
 	g_pMgr = new_DasCredMgr();  /* no key file store, as in v2 */
 	if(g_pMgr == NULL) INIT_FAIL;
 	
+#ifndef DAS_NO_DFT
 	if (PyType_Ready(&pyd2_DftType) < 0)
 		return NULL;
 	if (PyType_Ready(&pyd2_PsdType) < 0)
 		return NULL;
-	
+#endif
+
 	g_pPyD2Error = PyErr_NewException("_das3.Error", PyExc_Exception, NULL);
 	Py_INCREF(g_pPyD2Error);
 	
@@ -935,7 +943,9 @@ PyMODINIT_FUNC PyInit__das3(void){
 	import_array();
 	
 	/* Register the dft objects */
+#ifndef DAS_NO_DFT
 	dft_register(pMod);
+#endif
 	return pMod;
 }
 
@@ -963,10 +973,12 @@ PyMODINIT_FUNC init_das3(void){
 	g_pMgr = new_DasCredMgr();  /* no key file store, as in v2 */
 	if(g_pMgr == NULL) INIT_FAIL;
 	
+#ifndef DAS_NO_DFT
 	if (PyType_Ready(&pyd2_DftType) < 0)
 		return;
 	if (PyType_Ready(&pyd2_PsdType) < 0)
 		return;
+#endif
 
 	g_pPyD2Error = PyErr_NewException("_das3.Error", PyExc_StandardError, NULL);
 	Py_INCREF(g_pPyD2Error);
@@ -988,7 +1000,9 @@ PyMODINIT_FUNC init_das3(void){
  	 */
 	import_array();
 	
+#ifndef DAS_NO_DFT
 	dft_register(pMod);
+#endif
 	/* cords_register(pMod); */
 }
 

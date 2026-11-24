@@ -24,6 +24,7 @@ ROOTS = ('das3', 'scripts')
 TEST_FILES = (
 	'test/TestCatalog.py', 'test/TestDasTime.py', 'test/TestSortMinimal.py',
 	'test/TestRead.py', 'test/TestComposite.py', 'test/TestSource.py', 'test/TestPkt.py', 'test/TestProps.py', 'test/TestQuantity.py',
+	'test/TestPsd.py',
 )
 
 ZERO_ARG_SUPER = re.compile(r'\bsuper\(\s*\)')

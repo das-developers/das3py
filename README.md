@@ -17,28 +17,38 @@ from das2py* below.
 python -m pip install das3py
 ```
 
-The PyPI packages are pre-built for Linux on x86_64, for Python 2.7 and
-3.9 through 3.15.  They need glibc 2.26 or newer (RHEL 8, Ubuntu 18.04
-and later) and pip 20.3 or newer.  The 2.7 package is for UCS-4 builds of
-Python, as Linux distributions ship; a 2.7 built from source needs
-`--enable-unicode=ucs4`.  If pip is older, upgrade it first:
+The PyPI packages are pre-built for:
+
+* **Linux** on x86_64, for Python 2.7 and 3.9 through 3.15.  They need
+  glibc 2.26 or newer (RHEL 8, Ubuntu 18.04 and later) and pip 20.3 or
+  newer.  The 2.7 package is for UCS-4 builds of Python, as Linux
+  distributions ship; a 2.7 built from source needs
+  `--enable-unicode=ucs4`.
+
+* **Windows** on 64-bit x86, for Python 3.9 through 3.13.  Nothing else
+  has to be installed.
+
+If pip is older than 20.3, upgrade it first:
 
 ```bash
 python -m pip install -U pip
 ```
 
 On other Linux systems, build from source as described in *Building and
-Installing from Source on Linux* below.  For Windows and macOS, see
-*Windows and macOS*.
+Installing from Source on Linux* below.  For macOS, see *Windows and
+macOS*.
 
 To check the install, run one of the examples.  It needs matplotlib and
 an internet connection:
 
 ```bash
 python -m pip install matplotlib
-wget https://raw.githubusercontent.com/das-developers/das3py/main/examples/ex02_galileo_pws_spectra.py
+curl -O https://raw.githubusercontent.com/das-developers/das3py/main/examples/ex02_galileo_pws_spectra.py
 python ex02_galileo_pws_spectra.py
 ```
+
+On Windows type `curl.exe` in place of `curl`.  In Windows PowerShell,
+`curl` alone is a different command.
 
 It writes `ex02_galileo_pws_spectra.png`, which should look like this:
 
@@ -284,14 +294,24 @@ to build das3py and all dependencies:
    make PY_BIN=/path/to/python install
    ```
 
-The PyPI packages are built in a manylinux container with `make pypi`.
-The Makefile explains what that needs.
+The Linux PyPI packages are built in a manylinux container with
+`make pypi`.  The Makefile explains what that needs.
 
 ## Windows and macOS
 
-das3py has been built on Windows and macOS before, and `setup.py` has
-branches for both, but this release has not been tested on either.  If
-you need it there, please ask on the issue tracker.
+The Windows PyPI packages are built with `buildfiles\win_wheels.bat`.  It
+uses Visual Studio, vcpkg and das2C's nmake makefile, and the comments at
+the top of the file list what it needs.
+
+das3py has been built on macOS before, and `setup.py` has a branch for
+it, but this release has not been tested there.  If you need it on macOS,
+please ask on the issue tracker.
+
+## Licenses
+
+das3py is under the MIT license.  The PyPI packages also contain das2C
+and other libraries, compiled in.  `THIRD-PARTY.txt` lists them and their
+licenses, and each package carries the license texts.
 
 ## Reporting bugs
 Please use the github.com [issue tracker](https://github.com/das-developers/das3py/issues) 

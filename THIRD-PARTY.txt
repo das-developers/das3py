@@ -1,0 +1,56 @@
+Third party software in das3py
+==============================
+
+das3py itself is under the MIT license, see LICENSE.  The packages on PyPI
+(wheels) are compiled, and they also contain code from the projects below.
+Where a license file is named, it is in the LICENSES directory next to this
+file.  After "pip install das3py" both are in site-packages, in the
+das3py-<version>.dist-info/licenses directory.
+
+
+In every wheel
+--------------
+
+The _das3 extension module contains das2C, the das stream library:
+
+  das2C        https://github.com/das-developers/das2C    LICENSES/das2C.txt
+
+das2C is under the GNU Lesser General Public License version 2.1.  It
+includes code from these projects:
+
+  tomlc17, TOML parser by CK Tan        LICENSES/tomlc17.txt
+                                        https://github.com/cktan/tomlc17
+  json.h, JSON parser by Neil Henning   LICENSES/json.txt
+                                        https://github.com/sheredom/json.h
+  UTF-8 routines by Jeff Bezanson       LICENSES/utf8.txt
+  TT2000 time conversion from NASA CDF  LICENSES/cdf.txt
+
+The das3.pycdf module is pycdf from SpacePy, https://spacepy.github.io,
+changed to look first for the CDF library packaged beside it.  Its license
+is LICENSES/pycdf.txt.
+
+The das3/pycdf directory of the package holds the NASA CDF library itself
+(dllcdf.dll on Windows, libcdf.so on Linux), https://cdf.gsfc.nasa.gov,
+under the terms in LICENSES/cdf.txt.
+
+
+Windows wheels
+--------------
+
+On Windows das2C also includes:
+
+  dirent.h for Visual Studio by Toni Ronkko   LICENSES/dirent.txt
+  wcwidth() by Markus Kuhn                    LICENSES/wcwidth.txt
+
+and _das3 has these linked in statically:
+
+  OpenSSL      https://www.openssl.org        LICENSES/openssl.txt
+  Expat        https://libexpat.github.io     LICENSES/expat.txt
+  zlib         https://zlib.net               LICENSES/zlib.txt
+  PThreads4W   https://sourceforge.net/projects/pthreads4w/
+                                              LICENSES/pthreads.txt
+
+These are unchanged from the sources at the sites above.
+
+The Windows wheels do not contain FFTW.  das2C is built for them without
+its Fourier transform code, and das3.PSD is computed with NumPy.

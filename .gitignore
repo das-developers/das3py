@@ -11,6 +11,7 @@ ex*.cdf
 das3/pycdf/libcdf.so
 das3/pycdf/libcdf.dylib
 das3/pycdf/dllcdf.dll
+/LICENSES
 /co_notes
 session.txt
 /tmp

@@ -18,7 +18,7 @@
 # Find a way to get this from the manifest.  Until then the version is
 # also in pyproject.toml, setup.py (python 2 builds) and das3/__init__.py;
 # keep all four in step.
-DAS_PY_VER:=3.0.6
+DAS_PY_VER:=3.0.7
 
 ifeq ($(PY_BIN),)
 PY_BIN=$(shell which python)
@@ -116,6 +116,7 @@ das3/das-basic-stream-v2.2.xsd \
 das3/das-basic-stream-v3.0.xsd \
 das3/dastime.py \
 das3/dataset.py \
+das3/dft.py \
 das3/mpl.py \
 das3/node.py \
 das3/pkt.py \
@@ -304,10 +305,10 @@ endif
 # distclean removes the bundled das2C's build as well, but not the CDF
 # sources it downloaded; for that: make -C deps/das2C distclean
 clean:
-	-rm -r dist test_*_venv build *.egg-info
+	-rm -r dist test_*_venv build *.egg-info LICENSES
 
 distclean:
-	-rm -r dist test_*_venv build_*_venv build build.pypi *.egg-info
+	-rm -r dist test_*_venv build_*_venv build build.pypi *.egg-info LICENSES
 ifeq ($(DAS2C_BUNDLED),yes)
 	-if [ -f $(DAS2C_SUB)/Makefile ] ; then $(MAKE) -C $(DAS2C_SUB) clean ; fi
 endif

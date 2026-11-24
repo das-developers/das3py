@@ -4,6 +4,56 @@ Notable changes to das3py (published as das2py through 3.0.4).  Newest
 release first.  This is a summary, not a full history; `git log` has the
 rest.
 
+## [3.0.7] - unreleased
+
+Adds Windows packages.
+
+### Added
+
+- **Binary wheels on PyPI for 64-bit Windows**, Python 3.9 through 3.13.
+  das2C, OpenSSL 3.6.5, expat 2.10.0, zlib and PThreads4W are linked into
+  the extension, so nothing else has to be installed.  NASA's CDF 3.9.1
+  library comes with it for `das3.pycdf` and `das_cdfinfo`.  They run on
+  numpy 1.19.3 through 2.x.  `buildfiles\win_wheels.bat` builds them.
+
+- **`das3.dft`**, the `Psd` and `Dft` calculators written on NumPy.  They
+  take the same arguments as the FFTW ones in the C module and give the
+  same results to rounding error.  `das3.PSD` is the NumPy one wherever the
+  extension was built without FFTW.
+
+- **Builds without FFTW.**  `DAS_DFT=no` builds the extension against a
+  das2C made with `DFT=no`, without FFTW.  The Windows wheels are built
+  this way, so they contain nothing under the GPL.
+
+- **License texts in the wheels.**  A wheel now carries the license of
+  each library compiled into it, and `THIRD-PARTY.txt`, which lists them.
+
+- `test/TestPsd.py`, in the standard test list.
+
+### Changed
+
+- **Built on das2C v3.0.7.**  2018 catalog nodes (HttpStreamSrc 0.6 and
+  earlier, and 2018 Collections) are no longer read.  das2.org serves only
+  current nodes.
+
+- `setup.py` on Windows links the static libraries that das2C's nmake
+  build provides.  It used to look for an older vcpkg layout.
+
+- `examples/c_module/galileo_pws_e-survey.py` plots all three frequency
+  bands.  The server now sends one dataset per band, and the example drew
+  only the first.
+
+- `examples/ex03_cassini_rpws_multimode.py` draws a wider plot that fits
+  its title and date labels, and starts the frequency axis at 0.8 Hz.
+
+### Fixed
+
+- `_das3.Dft.calculate()` raised `TypeError` for a real signal, that is,
+  whenever the imaginary input was left out.
+
+- `examples/c_module/juno_hfwbr_cdf.py` put colons in the name of the CDF
+  file it writes, which Windows does not allow.
+
 ## [3.0.6] - 2026-11-24
 
 **The first release built on a stable das2C v3 (v3.0.6), and the first

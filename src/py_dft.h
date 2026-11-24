@@ -159,7 +159,10 @@ static PyObject* pyd2_Dft_calculate(pyd2_Dft* self, PyObject* args) {
 		}
 	}
 
-	if((! PyArray_Check(pObjReal)) || (! PyArray_Check(pObjImg))){
+	/* pObjImg is None for a real signal, which is not an array and is fine.
+	   Checking it anyway made every real-only calculate() a TypeError. */
+	if((! PyArray_Check(pObjReal)) ||
+	   ((pObjImg != Py_None) && (! PyArray_Check(pObjImg)))){
 		PyErr_SetString(PyExc_TypeError, "Unexpected type in pyd2_Dft_calculate()");
 		Py_DECREF(pObjReal);
 		Py_DECREF(pObjImg);

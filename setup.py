@@ -73,6 +73,51 @@ else:
 # builds' floor is the numpy they compiled against.
 lDefs = [('NPY_TARGET_VERSION', 'NPY_1_19_API_VERSION')]
 
+# DAS_DFT says whether the das2C being linked has its transform code,
+# das3/dft.c, and so needs the FFTW library.  It has to match how that das2C
+# was built: DFT=no in das2C's makefiles goes with DAS_DFT=no here, and a
+# mismatch either way stops at the link with unresolved names.
+#
+# With no, _das3 has no Dft and Psd types, das3 uses the numpy ones in
+# das3/dft.py, and FFTW stays out of the wheel.  FFTW is under the GPL, and
+# a wheel that contains it is distributed under the GPL's terms.
+#
+# The default is no for the static Windows build, which is where the PyPI
+# packages for Windows come from, and yes everywhere else.
+sDft = os.getenv("DAS_DFT")
+if sDft:
+	bDft = (sDft.lower() == 'yes')
+else:
+	bDft = not (sys.platform == 'win32' and bLinkStatic)
+print('(setup.py) DAS_DFT = %s'%('yes' if bDft else 'no'))
+if not bDft:
+	lDefs.append( ('DAS_NO_DFT', None) )
+
+# License texts for the code compiled into the wheel, as pairs of (file,
+# name to give it in LICENSES/).  THIRD-PARTY.txt says what each is for.
+# A wheel is a binary distribution of all of it, so the texts travel with
+# the wheel, in its dist-info/licenses directory.
+#
+# pycdf's is copied like the rest, not listed by its path in the package:
+# setuptools takes a license file inside das3/pycdf for a data file of das3
+# and then warns that das3.pycdf is not a configured package, which it is.
+#
+# das2C's own are in its source tree, or beside include/ in one of its
+# binary packages.  A das2C installed without them (headers in /usr/include)
+# gives a wheel without them, which is fine for local use.
+lLicSrc = [ (pjoin(sHere, 'das3', 'pycdf', 'LICENSE.md'), 'pycdf.txt') ]
+for sDir in (sCHdrDir, dname(sCHdrDir)):
+	lTop = [s for s in ('LICENSE', 'LICENSE.txt') if os.path.isfile(pjoin(sDir, s))]
+	if lTop and os.path.isdir(pjoin(sDir, 'LICENSES')):
+		lLicSrc.append( (pjoin(sDir, lTop[0]), 'das2C.txt') )
+		for s in sorted(os.listdir(pjoin(sDir, 'LICENSES'))):
+			# Code that is only compiled into das2C on Windows
+			if s in ('dirent.txt', 'wcwidth.txt') and sys.platform != 'win32':
+				continue
+			if s.endswith('.txt'):
+				lLicSrc.append( (pjoin(sDir, 'LICENSES', s), s) )
+		break
+
 if sCLibDir: lLibDirs = [sCLibDir]
 else: lLibDirs = []
 
@@ -93,30 +138,75 @@ if sys.platform == 'win32':
 		#	pjoin(sPyDir, "lib", "site-packages", "numpy", "core", "include")
 		#)
 
-		sVcRoot = os.getenv("VCPKG_ROOT")
-		if sVcRoot:
-			sVcLibDir = pjoin(sVcRoot, "installed","x64-windows-static","lib")
-			sVcIncDir = pjoin(sVcRoot, "installed","x64-windows-static","include")
-		else:
-			# With no other input, assume it's next door
-			sVcLibDir = "..\\vcpkg\\installed\\x64-windows-static\\lib"
-			sVcIncDir = "..\\vcpkg\\installed\\x64-windows-static\\include"
+		# das2C's nmake build (buildfiles\windows.mak) has vcpkg put expat,
+		# fftw3, openssl, pthreads and zlib under its build directory, as
+		# static libraries compiled for the DLL C runtime (/MD).  That is
+		# the runtime python extensions use, so these can be linked into
+		# _das3 and the wheel needs no DLLs of its own besides the CDF one.
+		# The fully static triplet, x64-windows-static, is /MT and would
+		# put a second C runtime in the process.
+		#
+		# DAS_DEPS_LIBDIR names some other directory holding them.
+		sDepLibDir = os.getenv("DAS_DEPS_LIBDIR")
+		if not sDepLibDir:
+			sDepLibDir = pjoin(
+				sCLibDir, "vcpkg_installed", "x64-windows-static-md", "lib"
+			)
+		print('(setup.py) DAS_DEPS_LIBDIR = %s'%sDepLibDir)
 
-		print('(setup.py) VCPKG_LIBDIR = %s'%sVcLibDir)
-
-		lLibDirs.append( sVcLibDir )
-		lInc.append( sVcIncDir )
-		lExObjs = ['%s/libdas3.lib'%sCLibDir]
-		lLibs = [ 
-			"fftw3", "libexpatMD", "libssl", "libcrypto", "Advapi32",
-			"User32", "Crypt32", "zlib", "pthreadVC3", "ws2_32"
+		# Given by full path, not by name, so that a library of the same
+		# name elsewhere on the linker's search path can't be taken in
+		# place of the one das2C was compiled against.  The expat and zlib
+		# file names changed between vcpkg releases, take the first found.
+		lExObjs = [pjoin(sCLibDir, 'libdas3.lib')]
+		lDeps = [
+			("libexpatMD.lib", "libexpat.lib"), ("libssl.lib",),
+			("libcrypto.lib",), ("zs.lib", "zlib.lib"), ("pthreadVC3.lib",)
 		]
+		lDepPkgs = ["expat", "openssl", "pthreads", "zlib"]
+		sDftArg = ' DFT=no'
+		if bDft:
+			lDeps.append( ("fftw3.lib",) )
+			lDepPkgs.append("fftw3")
+			sDftArg = ''
+
+		for tNames in lDeps:
+			lFound = [
+				pjoin(sDepLibDir, s) for s in tNames
+				if os.path.isfile(pjoin(sDepLibDir, s))
+			]
+			if not lFound:
+				print('(setup.py) ERROR: %s missing from %s'%(
+					' or '.join(tNames), sDepLibDir
+				))
+				print('(setup.py)   Build das2C first, in deps\\das2C after vcvars64.bat:')
+				print('(setup.py)     nmake /f buildfiles\\windows.mak CDF=yes%s build_dep'%sDftArg)
+				print('(setup.py)     nmake /f buildfiles\\windows.mak CDF=yes%s static'%sDftArg)
+				sys.exit(3)
+			lExObjs.append(lFound[0])
+
+		# The license text of each one, since they become part of _das3.
+		# vcpkg installs it as share/<package>/copyright.  Taken from the
+		# same tree as the libraries so that the text matches the version
+		# linked.  A das2C binary package already has these in its LICENSES
+		# directory, under the same names.  vcpkg installs fftw3 whether it
+		# is linked or not, so its text is taken only when it is.
+		sShare = pjoin(dname(sDepLibDir), "share")
+		for s in lDepPkgs:
+			if (s + '.txt') not in [t[1] for t in lLicSrc]:
+				lLicSrc.append( (pjoin(sShare, s, "copyright"), s + '.txt') )
+		if not bDft:
+			lLicSrc = [t for t in lLicSrc if t[1] != 'fftw3.txt']
+
+		# Windows libraries that OpenSSL and das2C's sockets call
+		lLibs = ["Advapi32", "User32", "Crypt32", "ws2_32"]
 	else:
 		# Do as much static linking as you can. Removes run-time dependencies
 		lTmp = [ 
 			"libdas3", "fftw3", "expat", "libssl", "libcrypto", "zlib", 
 			"libpthreadVC3"
 		]
+		if not bDft: lTmp.remove("fftw3")
 		lExObjs = [ '%s/%s.lib'%(sCLibDir, s) for s in lTmp ]
 		lLibs = ["ws2_32"]
 
@@ -156,12 +246,13 @@ elif sys.platform == 'darwin':
 			'%s/libdas3.a'%sCLibDir,
 			'%s/opt/openssl/lib/libssl.a'%sBrewDir,
 			'%s/opt/openssl/lib/libcrypto.a'%sBrewDir,
-			'%s/lib/libfftw3.a'%sBrewDir
 		]
+		if bDft: lExObjs.append('%s/lib/libfftw3.a'%sBrewDir)
 		lLibs = ["expat", "z"]
 	else:
 		lExObjs = ['%s/libdas3.a'%sCLibDir]
 		lLibs   = ["fftw3", "expat", "ssl", "crypto", "z"]
+		if not bDft: lLibs.remove("fftw3")
 
 
 	ext = Extension(
@@ -177,6 +268,7 @@ elif sys.platform == 'darwin':
 else:
 	# Linux, also works for anaconda on macos
 	lLibs = ["fftw3", "expat", "ssl", "crypto", "z"]
+	if not bDft: lLibs.remove("fftw3")
 	lExObjs = ['%s/libdas3.a'%sCLibDir]
 	lLinkArgs = []
 
@@ -210,6 +302,27 @@ else:
 		,extra_objects=lExObjs
 		,extra_link_args=lLinkArgs
 	)
+
+# Collect the license texts in LICENSES/, made new on each build so that it
+# can't keep a text from an earlier build against other libraries.  It has
+# to be inside the source tree: setuptools only takes license files from
+# there, and stores them under the same relative path.
+sLicDir = pjoin(sHere, 'LICENSES')
+if os.path.isdir(sLicDir):
+	shutil.rmtree(sLicDir)
+os.mkdir(sLicDir)
+for (sSrc, sName) in lLicSrc:
+	if not os.path.isfile(sSrc):
+		print('(setup.py) ERROR: license text %s missing.'%sSrc)
+		print('(setup.py)   The library it covers is linked into _das3, so the wheel')
+		print('(setup.py)   has to carry it.')
+		sys.exit(3)
+	shutil.copyfile(sSrc, pjoin(sLicDir, sName))
+print('(setup.py) License texts for the wheel: %s'%', '.join(
+	[t[1] for t in lLicSrc]
+))
+
+lLicFiles = ['LICENSE', 'THIRD-PARTY.txt', 'LICENSES/*.txt']
 
 # ... because import numpy at top level doesn't work anymore (yay)
 # Solution from:
@@ -257,11 +370,16 @@ if sys.version_info[0] < 3:
 			"Changelog": "https://github.com/das-developers/das3py/blob/main/CHANGELOG.md",
 		},
 	)
+else:
+	# The license texts gathered above.  Python 3 only: setuptools 44 doesn't
+	# know this keyword, so the 2.7 wheel carries das3py's LICENSE alone.
+	# pyproject.toml leaves license-files out so that this list is used.
+	dPy2Meta = dict(license_files=lLicFiles)
 
 setup(
 	cmdclass={'build_ext':build_ext},
 	name="das3py",
-	version="3.0.6",
+	version="3.0.7",
 	ext_modules=[ext],
 	packages=['das3', 'das3.pycdf'],
 	author="C Piker",

@@ -32,7 +32,7 @@ print("das3  %s\n_das3 %s" % (das3.__file__, _das3.__file__))
 '
 
 for t in CheckPortable TestCatalog TestDasTime TestSortMinimal TestRead \
-	TestComposite TestSource TestPkt TestProps TestQuantity
+	TestComposite TestSource TestPkt TestProps TestQuantity TestPsd
 do
 	"$PY" test/$t.py
 done

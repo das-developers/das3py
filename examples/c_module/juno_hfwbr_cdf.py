@@ -205,7 +205,10 @@ def timeUnits(aSomeAry):
 def writeCdf(aEpoch, aFreq, aSpec, sBeg, sEnd, nDFT, nSlide):
 	"""Not a generic CDF writing function, specific to this program"""
 
-	sCdfFile = "wav_hfrIQ_psd%d_slide%d_%s_%s.cdf"%(nDFT, nDFT//nSlide, sBeg, sEnd)
+	# No colons in the file name, Windows doesn't allow them
+	sCdfFile = "wav_hfrIQ_psd%d_slide%d_%s_%s.cdf"%(
+		nDFT, nDFT//nSlide, sBeg.replace(':',''), sEnd.replace(':','')
+	)
 
 	pout("Finished generating spectra from %s to %s\n"%(sBeg, sEnd))
 	pout("Writing %s\n"%sCdfFile)

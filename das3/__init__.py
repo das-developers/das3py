@@ -28,7 +28,7 @@ FILL = -1.0e+31
 # source path is given without one.
 DEF_CATALOG_TAG = 'tag:das2.org,2012:'
 
-__version__ = '3.0.6'
+__version__ = '3.0.7'
 
 # Only the type comments below name Tuple, and those are read statically,
 # so the name need not stay on the package.
@@ -39,7 +39,19 @@ except ImportError:
 	pass
 	
 import _das3
+
+# The power spectral density calculator.  _das3 has one, on FFTW, unless it
+# was built against a das2C without its transform code, as the Windows
+# packages are, to keep FFTW (GPL) out of them.  Then the numpy ones in
+# das3.dft are used, which give the same results.  They are also put on
+# _das3 under the names the C module uses, so that code written against the
+# low-level module finds them in either kind of build.
+from das3 import dft
+if not hasattr(_das3, 'Psd'):
+	_das3.Psd = dft.Psd
+	_das3.Dft = dft.Dft
 from _das3 import Psd as PSD
+
 from das3.dastime   import *
 from das3.source    import *
 from das3.streamsrc import * 

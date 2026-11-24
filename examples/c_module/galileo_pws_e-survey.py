@@ -10,8 +10,9 @@ import das3
 
 ##############################################################################
 def getArrayAndUnits(ds, sDimType, sDim, sVar):
-	"""Helper function to get the numpy arrays for a variable since das2 higher
-	level module is not complete"""
+	"""Helper function to get the numpy array and units for a variable from
+	a low-level dataset dictionary.  The higher level das3 module does this
+	for you: ds['frequency']['center'].array"""
 
 	if sDimType not in ('coords','data'):
 		raise ValueError("Dimension type: '"+sDimType+"', expected 'coords' or 'data")
@@ -55,11 +56,12 @@ def getArrayAndUnits(ds, sDimType, sDim, sVar):
 ##############################################################################
 
 def main(argv):
-	"""Annotated example of using libdas2 and matplotlib to gather and plot
+	"""Annotated example of using das2C and matplotlib to gather and plot
 	a day's worth of Galileo PWS electric spectrum data using the low-level
-	interface.  The das2 python module consist of a low-level C-module, _das3
-	and a higher level module that acts in a more pythonic way, das2.  The
-	higher level module is under construction and is thus ignored here.
+	interface.  das3py consists of a low-level C-module, _das3, and a higher
+	level module that acts in a more pythonic way, das3.  Most programs
+	should use the higher level module, as ex02_galileo_pws_spectra.py does
+	for this same instrument.  This example shows what is underneath it.
 	"""
 	
 	# Download a das2 Galileo PWS dynamic electric spectrum stream.  We're
@@ -68,7 +70,7 @@ def main(argv):
 	
 	# Also, to demonstrate one of the features of the library we are 
 	# intentionally asking the wrong server for galileo data.  Since the server
-	# planet knows where galileo data are it issues a redirect, which libdas2
+	# planet knows where galileo data are it issues a redirect, which das2C
 	# follows.
 	sUrl = 'http://planet.physics.uiowa.edu/das/das2Server?server=dataset&'+\
 	       'dataset=Galileo/PWS/Survey_Electric&start_time=2001-001&' +\
@@ -78,27 +80,10 @@ def main(argv):
 	(dHdr, lDs) = das3._das3.read_server(sUrl)
 	print("%d correlated dataset(s) downloaded\n"%len(lDs))
 	
-	# Here's how this will work in the near future
-	# 
-	# sUri = 'tag:das2.org,2012:site:/uiowa/Galileo/PWS/Survey_Electric'
-	# source = das3.DataSource(sUri)
-	# lDs = source.request(time=['2001-001','2001-002',60])
-	# ds = lDs[0]
-	# 
-	# aTime = ds.coord.time['center']
-	# aFreq = ds.coord.freq['center']
-	# aPower  = ds.data.electric['center']
-	#
-	# sTitle = ds.props['title']
-	# sXlabel = ds.coords.time.props['label']
-	# sYlabel = ds.coords.freq.props['label']
-	# sZlabel = ds.data.electric.props['label']
-	
-	
-	# So what did we get?  The low-level interface just returns a list of 
-	# dataset objects, which are just dictionaries.  A higher level interface
-	# using a python class is in the works but does not exist at this time so
-	# we're going to have to interact with the low-level object directly. 
+	# So what did we get?  The low-level interface just returns a list of
+	# dataset objects, which are just dictionaries.  The higher level das3
+	# module wraps these in python classes, here we interact with the
+	# low-level objects directly.
 	#
 	# The low-level output always has the same morphology:
 	# 
@@ -123,9 +108,10 @@ def main(argv):
 	# trees in addition to index maps.
 	
 	
-	# Galileo spectra are always a single mode (the frequency table doesn't
-	# change) so we know up front that there will only be one dataset in the
-	# list.
+	# The server sends one dataset per frequency band of the instrument, each
+	# with its own frequency table and its own time resolution.  The first
+	# is used below to show what a dataset holds, and all of them are
+	# plotted at the end.
 	ds = lDs[0]
 	
 	# The info element contains a string overview of the dataset
@@ -195,21 +181,43 @@ def main(argv):
 	# them aren't.  Typically only the center Variable is supplied.
 	
 	# Lets get the data arrays for the center Variables and totally
-	# ignore the index map
-	(aY, unitsY) = getArrayAndUnits(ds, 'coords', 'frequency', 'center')
-	(aZ, unitsZ) = getArrayAndUnits(ds, 'data',  'electric', 'center')
-	
-	# Times are converted on read to numpy datetime64[ns] (units ns1970),
-	# which matplotlib plots directly as dates
-	(aX, unitsX) = getArrayAndUnits(ds, 'coords', 'time', 'center')
-	
-	aY = N.log10(aY)
-	aZ = N.log10(aZ.transpose())
-	pyplot.pcolor(aX, aY, aZ, cmap='jet')
-	pyplot.axis([aX.min(), aX.max(), aY.min(), aY.max()])
+	# ignore the index map.  One (time, frequency, spectral density) set
+	# per dataset.
+	lBands = []
+	for ds in lDs:
+		(aY, unitsY) = getArrayAndUnits(ds, 'coords', 'frequency', 'center')
+		(aZ, unitsZ) = getArrayAndUnits(ds, 'data',  'electric', 'center')
+
+		# Times are converted on read to numpy datetime64[ns] (units ns1970),
+		# which matplotlib plots directly as dates
+		(aX, unitsX) = getArrayAndUnits(ds, 'coords', 'time', 'center')
+
+		# The stream marks missing measurements with the fill value 0, which
+		# has no logarithm.  Mask those so they are left blank.  N.ma.log10
+		# skips masked values, plain N.log10 would compute them and warn.
+		aZ = N.ma.log10(N.ma.masked_less_equal(aZ, 0).transpose())
+		lBands.append( (aX, N.log10(aY), aZ) )
+
+	# One color scale for all the bands, or the same color would mean a
+	# different spectral density in each
+	rMinZ = min([aZ.min() for (aX, aY, aZ) in lBands])
+	rMaxZ = max([aZ.max() for (aX, aY, aZ) in lBands])
+
+	for (aX, aY, aZ) in lBands:
+		pyplot.pcolormesh(aX, aY, aZ, cmap='jet', vmin=rMinZ, vmax=rMaxZ)
+
+	xMin = min([aX.min() for (aX, aY, aZ) in lBands])
+	xMax = max([aX.max() for (aX, aY, aZ) in lBands])
+	yMin = min([aY.min() for (aX, aY, aZ) in lBands])
+	yMax = max([aY.max() for (aX, aY, aZ) in lBands])
+	pyplot.axis([xMin, xMax, yMin, yMax])
+
 	cbar = pyplot.colorbar()
 	cbar.set_label("log(%s)"%unitsZ)
-	pyplot.xlabel(unitsX)
+	pyplot.gcf().autofmt_xdate()  # Slant the dates so they don't overlap
+	pyplot.xlabel("%s to %s UTC"%(
+		N.datetime_as_string(xMin, unit='m'), N.datetime_as_string(xMax, unit='m')
+	))
 	pyplot.ylabel("log(%s)"%unitsY)
 	pyplot.title(dHdr['props']['title'][1])
 	pyplot.savefig('galileo_pws_e-survey.png')  # Or pyplot.show(), with the backend line above commented out
