@@ -192,6 +192,17 @@ method renames, and what you can read: das3 streams and composite values.
   Only wheels are built and published, there is no source distribution;
   to build das3py yourself, start from the git repository.
 
+- **Binary wheels on PyPI** for Linux x86_64: Python 2.7 and 3.9 through
+  3.15.  They need glibc 2.26 or newer (Rocky/RHEL 8, Ubuntu 18.04 and
+  later) and pip 20.3 or newer.  fftw3 and OpenSSL ship inside the wheel,
+  and expat 2.11.0 is linked in statically, so slim container images
+  work.  Other platforms, and Python 3.6 to 3.8, build from the git
+  repository.
+
+- **numpy floor.**  numpy 1.19.3 for Python 3.9 and up: the wheels are
+  compiled against numpy 2 and run on 1.19.3 through 2.x.  numpy 1.16.6
+  for Python 2.7.
+
 ### Fixed
 
 - `get_source()` and `get_catalog()` returned the wrong object for a
@@ -229,6 +240,11 @@ method renames, and what you can read: das3 streams and composite values.
   ([das2C#39](https://github.com/das-developers/das2C/issues/39)).
 
 - Namespaced das3 streams don't read yet.
+
+- The Python 2.7 wheel is for UCS-4 builds (`cp27mu`), as distributions
+  ship.  A 2.7 compiled from source with the default `./configure` is
+  UCS-2 and can't install it: rebuild with `--enable-unicode=ucs4`, or
+  build das3py from git.
 
 ## [2.3.1] - 2023-11-21
 

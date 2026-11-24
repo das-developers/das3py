@@ -11,6 +11,9 @@
 #
 #  DAS_INCDIR  Where das2C's headers and library are, for an installed or
 #  DAS_LIBDIR  packaged das2C.  Either one overrides DAS2C for its part.
+#
+#  CONTAINER_ENGINE  podman (default) or docker, for make pypi
+#  PYPI_DIRTY        yes to let make pypi build from uncommitted changes
 
 # Find a way to get this from the manifest.  Until then the version is
 # also in pyproject.toml, setup.py (python 2 builds), das3/__init__.py and
@@ -139,7 +142,7 @@ compat/das2py/setup.cfg \
 compat/das2py/README.md \
 compat/das2py/das2/__init__.py
 
-.PHONY: build dist test install install-compat clean distclean examples das2C
+.PHONY: build dist test install install-compat clean distclean examples das2C pypi
 
 build:dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
 
@@ -229,25 +232,8 @@ test:dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
 	./test_$(VDIR)/bin/python -m pip uninstall -y --isolated $(PY_VER_WARN) das2py das3py
 	./test_$(VDIR)/bin/python -m pip install --isolated $(PY_VER_WARN) dist/$(WHEEL_FILE) $(COMPAT_DIST)/$(COMPAT_WHEEL)
 	@./test_$(VDIR)/bin/python -c 'import numpy;print("===================================");print("  Numpy Runtime Version is %s"%numpy.__version__);		print("===================================")'
-	./test_$(VDIR)/bin/python test/CheckPortable.py
-	./test_$(VDIR)/bin/python test/TestCatalog.py
-	./test_$(VDIR)/bin/python test/TestDasTime.py
-	./test_$(VDIR)/bin/python test/TestSortMinimal.py
-	./test_$(VDIR)/bin/python test/TestRead.py
-	./test_$(VDIR)/bin/python test/TestComposite.py
-	./test_$(VDIR)/bin/python test/TestAlias.py
-	./test_$(VDIR)/bin/python test/TestSource.py
-	./test_$(VDIR)/bin/python test/TestPkt.py
-	./test_$(VDIR)/bin/python test/TestProps.py
-	./test_$(VDIR)/bin/python test/TestQuantity.py
-	./test_$(VDIR)/bin/das_verify -h
-	./test_$(VDIR)/bin/das_verify test/ex05_waveform_extra.d3t
-	./test_$(VDIR)/bin/das_verify test/ex40_rotation.d3t
-	./test_$(VDIR)/bin/das_verify test/ex43_msc_complex_cal.d3b
-	./test_$(VDIR)/bin/das_verify test/ex16_mag_grid_doc.d3x
-	./test_$(VDIR)/bin/das_verify test/ex20_tracers_aci.d3t
-	./test_$(VDIR)/bin/das_cdfinfo -h 
-	./test_$(VDIR)/bin/das_cdfinfo test/vg1_pws_wf_2023-10-24T03_v1.0.cdf
+	# The test list itself is shared with the cibuildwheel builds
+	PY=$(CURDIR)/test_$(VDIR)/bin/python bash test/wheel_tests.sh
 	@echo "All tests ran without returning an error code"
 
 # Every example writes a PNG and none opens a window, so the file backend is
@@ -302,6 +288,41 @@ install:
 install-compat:
 	$(PY_BIN) -m pip install --isolated --no-python-version-warning ./dist/$(WHEEL_FILE) ./$(COMPAT_DIST)/$(COMPAT_WHEEL)
 
+# ########################################################################### #
+# Wheels for PyPI
+#
+# The wheels above are tagged linux_x86_64 and linked against this machine's
+# C library; PyPI refuses them.  These are built in the manylinux_2_28
+# container image (AlmaLinux 8), one per python from 3.9 up plus a cp27mu
+# one, and repaired by auditwheel, so they run on glibc 2.26 and newer.
+# They go in their own directory so they can't be mixed up with the above:
+#
+#   make pypi             (from a committed tree; PYPI_DIRTY=yes to override)
+#   twine upload dist/pypi/*
+#
+# Needs a python 3 PY_BIN, for cibuildwheel, and podman or docker
+# (CONTAINER_ENGINE).  Takes about 15 minutes; das2C and expat are built
+# twice, once for the python 3 wheels and once for 2.7.
+
+PYPI_DIST:=dist/pypi
+CONTAINER_ENGINE?=podman
+
+# Pinned to the release line this was tested with.  Each cibuildwheel
+# release also pins the dated manylinux image it pulls, so a newer one
+# changes the build environment too.
+build_$(VDIR)/bin/cibuildwheel:build_$(VDIR)/bin/python
+	build_$(VDIR)/bin/python -m pip install "cibuildwheel>=4.3.5,<5"
+
+pypi:
+ifneq ($(PY_MAJ_VER_TOK),3)
+	@echo "ERROR: make pypi needs a python 3 PY_BIN, to run cibuildwheel"
+	@exit 3
+else
+	$(MAKE) build_$(VDIR)/bin/cibuildwheel
+	CIBW=$(CURDIR)/build_$(VDIR)/bin/cibuildwheel ENGINE=$(CONTAINER_ENGINE) \
+	 PYPI_DIRTY=$(PYPI_DIRTY) bash buildfiles/pypi_wheels.sh $(PYPI_DIST)
+endif
+
 # clean leaves das2C alone, it doesn't depend on the python in use.
 # distclean removes the bundled das2C's build as well, but not the CDF
 # sources it downloaded; for that: make -C deps/das2C distclean
@@ -309,7 +330,7 @@ clean:
 	-rm -r dist $(COMPAT_DIST) test_*_venv build *.egg-info
 
 distclean:
-	-rm -r dist $(COMPAT_DIST) test_*_venv build_*_venv build *.egg-info
+	-rm -r dist $(COMPAT_DIST) test_*_venv build_*_venv build build.pypi *.egg-info
 ifeq ($(DAS2C_BUNDLED),yes)
 	-if [ -f $(DAS2C_SUB)/Makefile ] ; then $(MAKE) -C $(DAS2C_SUB) clean ; fi
 endif

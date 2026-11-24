@@ -1,7 +1,17 @@
 [project]
 name = "das3py"
 version = "3.0.6rc1"
-dependencies = [ "numpy>=1.16.6", "lxml" ]
+# The numpy floor splits at 3.9, the oldest python with a wheel on PyPI.
+# Those wheels are compiled against numpy 2 with NPY_TARGET_VERSION set to
+# 1.19 (see setup.py), so they run on numpy 1.19.3 (the first with 3.9
+# support) and up, 2.x included.  2.7 and the from-git 3.6 to 3.8 builds
+# compile against a numpy 1.x and run on 1.16.6 and up.  Keep this list,
+# setup.py's install_requires and its NPY_TARGET_VERSION in step.
+dependencies = [
+	"numpy>=1.19.3; python_version>='3.9'",
+	"numpy>=1.16.6; python_version<'3.9'",
+	"lxml",
+]
 description = "An efficient space physics data client for python"
 readme = "README.md"
 # 2.7, or 3.6 and up
@@ -25,9 +35,44 @@ das_verify = "das3.verify:main"
 das_cdfinfo = "das3.cdfinfo:main"
 
 [build-system]
-#requires = [ "setuptools", "numpy>=2.0.0" ]
-requires = [ "setuptools", "numpy>=1.16.0"]
+# numpy 2 for 3.9 and up: an extension compiled against numpy 1.x will not
+# import under numpy 2, one compiled against 2.x runs on both.  Below 3.9
+# there is no numpy 2, so the newest 1.x for that python is what builds.
+requires = [
+	"setuptools",
+	"numpy>=2.0; python_version>='3.9'",
+	"numpy>=1.16.0; python_version<'3.9'",
+]
 build-backend = "setuptools.build_meta"
+
+# Wheels for PyPI.  Linux x86_64 only so far.  Skipped for now: musllinux
+# (Alpine, before-all is written for dnf) and the free-threaded builds
+# (_das3 has not been checked for running without the GIL).
+#
+# Locally: CIBW_CONTAINER_ENGINE=podman cibuildwheel --platform linux
+# from a clean copy of the tree, since the whole directory is copied into
+# the container.
+[tool.cibuildwheel]
+build = "cp3*-manylinux_x86_64"
+skip = "cp3*t-*"
+# das3/ and compat/ ride along for CheckPortable, which reads them as
+# source, and so the das2py shim can be installed beside the wheel for
+# TestAlias.  The shim's das3py requirement is met by the wheel already in
+# the test venv, so nothing is fetched for it but setuptools.
+test-sources = ["test", "das3", "compat"]
+test-command = [
+	"python -m pip install ./compat/das2py",
+	"bash test/wheel_tests.sh",
+]
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+# Pinned rather than taking cibuildwheel's default, which moves.  2_28 is
+# AlmaLinux 8.  The wheels come out tagged manylinux_2_26: the static
+# expat calls getentropy (glibc 2.25), the rest needs only 2.17.
+manylinux-x86_64-image = "manylinux_2_28"
+before-all = "bash {project}/buildfiles/cibw_before_all.sh"
+environment = { DAS_EXPAT_LIB = "/usr/local/lib/libexpat.a" }
 
 #[tool.setuptools]
 #include-package-data = true

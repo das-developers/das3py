@@ -8,15 +8,15 @@ from os.path import join as pjoin
 from setuptools.command.build_ext import build_ext as _build_ext
 import sys
 
-# Unless told otherwise das2C is the git submodule in deps/das2C, which pins
-# the das2C commit this das3py goes with, built for N_ARCH.  Windows.mak
-# ignores N_ARCH and always builds in build.windows, CMake builds need
-# DAS_LIBDIR.
+# Unless told otherwise das2C taken from the submodule in deps/das2C.
+# N_ARCH is used to separate operation systems that have libc differences.
+# Windows is rather stable and ignores N_ARCH
+# CMake builds need DAS_LIBDIR.
 #
 # The path is taken from this file's location, not the current directory.
-# It only exists in a git checkout: an sdist doesn't carry das2C, and
+# It only exists in a git clone: an sdist doesn't carry das2C, and
 # 'python -m build' compiles in an unpacked sdist, so there DAS_LIBDIR and
-# DAS_INCDIR have to be set, as the Makefile does.
+# DAS_INCDIR have to be set.
 sHere = os.path.dirname(os.path.abspath(__file__))
 sSubMod = pjoin(sHere, 'deps', 'das2C')
 
@@ -62,14 +62,19 @@ if os.getenv("CONDA_PREFIX"):
 else:
 	bLinkStatic=True
 
-lDefs = []
+# The oldest numpy C API the das3py may assume, and so the oldest numpy
+# it will import under.  
+# 
+# 1.19 is the first numpy for python 3.9, our oldest python 3 wheel.  Keep
+# it matching the numpy floor in pyproject.toml and install_requires below.
+#
+# numpy before 1.25 doesn't read the macro (2.7 builds against 1.16.6, the
+# from-git 3.6 to 3.8 builds against a 1.x), so it is ignored there: those
+# builds' floor is the numpy they compiled against.
+lDefs = [('NPY_TARGET_VERSION', 'NPY_1_19_API_VERSION')]
 
 if sCLibDir: lLibDirs = [sCLibDir]
 else: lLibDirs = []
-
-# Hopefully the build system knows how to add numpy headers back in
-#if sCHdrDir: lInc = [sCHdrDir, numpy.get_include()]
-#else: lInc = [numpy.get_include()]
 
 if sCHdrDir: lInc = [ sCHdrDir ]
 else: lInc = [ ]
@@ -171,14 +176,39 @@ elif sys.platform == 'darwin':
 	)	
 else:
 	# Linux, also works for anaconda on macos
+	lLibs = ["fftw3", "expat", "ssl", "crypto", "z"]
+	lExObjs = ['%s/libdas3.a'%sCLibDir]
+	lLinkArgs = []
+
+	# DAS_EXPAT_LIB, the path of a libexpat.a built with -fPIC, links expat
+	# into the extension.  The manylinux wheels need this: auditwheel counts
+	# libexpat.so.1 as a system library and won't bundle it, but slim and
+	# distroless images don't have it, so import fails.
+	#
+	# --exclude-libs keeps its symbols local to _das3. Note expat's symbols
+	# aren't versioned, so when the process already has libexpat.so.1 loaded
+	# (a distro python links one for pyexpat) the dynamic linker would
+	# otherwise bind our calls to that copy and not to the version we built
+	# locally.
+	sExpatA = os.getenv("DAS_EXPAT_LIB")
+	if sExpatA:
+		if not os.path.isfile(sExpatA):
+			print('(setup.py) ERROR: DAS_EXPAT_LIB=%s does not exist'%sExpatA)
+			sys.exit(3)
+		print('(setup.py) Linking expat statically from %s'%sExpatA)
+		lLibs.remove("expat")
+		lExObjs.append(sExpatA)
+		lLinkArgs.append('-Wl,--exclude-libs,%s'%bname(sExpatA))
+
 	ext = Extension(
 		"_das3", sources=lSrc
 		,include_dirs=lInc
 		,define_macros=lDefs
 		,library_dirs=lLibDirs
-		,libraries=["fftw3", "expat", "ssl", "crypto", "z"]
+		,libraries=lLibs
 		,extra_compile_args=['-std=c99', '-ggdb', '-O0']
-		,extra_objects=['%s/libdas3.a'%sCLibDir]
+		,extra_objects=lExObjs
+		,extra_link_args=lLinkArgs
 	)
 
 # ... because import numpy at top level doesn't work anymore (yay)
@@ -202,6 +232,32 @@ class build_ext(_build_ext):
 		self.include_dirs.insert(0, numpy.get_include())
 
 
+# The project description for python 2 builds.  setuptools 44, the last for
+# 2.7, ignores pyproject.toml's [project] table, and without these the 2.7
+# wheel's metadata says UNKNOWN for its summary, page text and license.
+# That is more than cosmetic: PyPI takes a release's description from the
+# first file uploaded for it, and cp27 sorts first.  Python 3 builds read
+# [project], and newer setuptools objects to the same fields given here as
+# well, so these are passed for python 2 only.  Keep them in step with
+# pyproject.toml.
+dPy2Meta = {}
+if sys.version_info[0] < 3:
+	import io
+	with io.open(pjoin(sHere, 'README.md'), encoding='utf-8') as fIn:
+		sReadme = fIn.read()
+	dPy2Meta = dict(
+		description="An efficient space physics data client for python",
+		long_description=sReadme,
+		long_description_content_type="text/markdown",
+		license="MIT",
+		python_requires=">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*",
+		keywords=["space-physics", "magnetosphere", "das2", "das3"],
+		project_urls={
+			"Repository": "https://github.com/das-developers/das3py",
+			"Changelog": "https://github.com/das-developers/das3py/blob/main/CHANGELOG.md",
+		},
+	)
+
 setup(
 	cmdclass={'build_ext':build_ext},
 	name="das3py",
@@ -220,5 +276,12 @@ setup(
 	include_package_data=True,
 	#package_data={'das2':['xsd/*.xsd']}, # <-- in das2C now
 	package_data={'das3.pycdf':[bname(sCdfSo)]},
-	install_requires=['lxml','numpy>=1.16.6']
+	# Same as dependencies in pyproject.toml.  The 2.7 wheel's metadata comes
+	# from here: setuptools 44, the last for 2.7, ignores [project].
+	install_requires=[
+		'lxml',
+		'numpy>=1.19.3; python_version>="3.9"',
+		'numpy>=1.16.6; python_version<"3.9"',
+	],
+	**dPy2Meta
 )
