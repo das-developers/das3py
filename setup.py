@@ -261,7 +261,7 @@ if sys.version_info[0] < 3:
 setup(
 	cmdclass={'build_ext':build_ext},
 	name="das3py",
-	version="3.0.6rc1",
+	version="3.0.6",
 	ext_modules=[ext],
 	packages=['das3', 'das3.pycdf'],
 	author="C Piker",

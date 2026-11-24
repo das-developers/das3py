@@ -18,7 +18,7 @@
 # Find a way to get this from the manifest.  Until then the version is
 # also in pyproject.toml, setup.py (python 2 builds), das3/__init__.py and
 # compat/das2py/setup.cfg; keep all five in step.
-DAS_PY_VER:=3.0.6rc1
+DAS_PY_VER:=3.0.6
 
 ifeq ($(PY_BIN),)
 PY_BIN=$(shell which python)

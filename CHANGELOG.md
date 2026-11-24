@@ -4,7 +4,7 @@ Notable changes to das3py (published as das2py through 3.0.4).  Newest
 release first.  This is a summary, not a full history; `git log` has the
 rest.
 
-## [3.0.6] - unreleased
+## [3.0.6] - 2026-11-24
 
 **The first release built on a stable das2C v3 (v3.0.6), and the first
 under the name das3py.**
@@ -193,7 +193,7 @@ method renames, and what you can read: das3 streams and composite values.
   to build das3py yourself, start from the git repository.
 
 - **Binary wheels on PyPI** for Linux x86_64: Python 2.7 and 3.9 through
-  3.15.  They need glibc 2.26 or newer (Rocky/RHEL 8, Ubuntu 18.04 and
+  3.15.  They need glibc 2.26 or newer (RHEL 8, Ubuntu 18.04 and
   later) and pip 20.3 or newer.  fftw3 and OpenSSL ship inside the wheel,
   and expat 2.11.0 is linked in statically, so slim container images
   work.  Other platforms, and Python 3.6 to 3.8, build from the git

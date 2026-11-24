@@ -28,7 +28,7 @@ FILL = -1.0e+31
 # source path is given without one.
 DEF_CATALOG_TAG = 'tag:das2.org,2012:'
 
-__version__ = '3.0.6rc1'
+__version__ = '3.0.6'
 
 # Only the type comments below name Tuple, and those are read statically,
 # so the name need not stay on the package.

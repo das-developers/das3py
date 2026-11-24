@@ -3,7 +3,7 @@ Das servers typically provide data relevant to space plasma and magnetospheric
 physics research. To retrieve data, an HTTP GET request is posted to a das
 server by a client program and a self-describing stream of data values covering
 the requested time range, at the requested time resolution, is provided in the
-response body. This package, *das3py* provides an efficient space physics data
+response body. This package, *das3py*, provides an efficient space physics data
 client for python.  Streams are parsed and stored as NumPy arrays using a C
 extension, avoiding data copies and conversions.
 
@@ -16,157 +16,30 @@ from das2py* below.
 python -m pip install das3py
 ```
 
-## Anaconda Package
-
-[![Anaconda Package](https://anaconda.org/dasdevelopers/das3py/badges/version.svg)](https://anaconda.org/DasDevelopers/das3py)
-
-## What changed in 3.0
-
-The short version, for people upgrading from 2.3:
-
-* **The package is `das3` now.**  It reads das3 streams, so it's named for
-  them.  `import das2` keeps working as an alias, installed by the das2py
-  transitional package, and points at the very same modules, so old and
-  new code mix without a fuss.  The pip name is now
-  `das3py`.  Python 2.7 and 3.x are both fine; `das3` says nothing about
-  the interpreter.
-* **Composite values.**  Vectors, rotation matrices, quaternions and complex
-  pairs come through as one variable with a trailing internal shape, so a
-  vector over N records is an (N, 3) array in a shape (N,) dataset.  Each
-  variable carries its `<ops>` formalism as a dict (`var.ops`), one label
-  per component (`var.labels`), and `var.extShape()` / `var.intrShape()`
-  for the two halves of the shape, with `var.extRank` / `var.intrRank`
-  counting them.  `var.storage()` gives the values without the dataset's
-  broadcast.
-* **Sequences are materialized.**  A coordinate defined by a `<sequence>` in
-  the stream header arrives as a real array now instead of going missing.
-* **Dimensions know what they are.**  `dim.kind` is `'coord'` or `'data'`,
-  and `ds.coordKeys()` / `ds.dataKeys()` list one kind at a time.
-* **Tidier names.**  `dir(das3)` shows the public API and nothing else.  A
-  few methods were renamed to match the rest: `DasTime.fromString`,
-  `DasTime.roundDoy`, `Dimension.hasProp` and `hasPropVal` (replacing
-  `propEq`) and `Source.infoProto`.  The 2.3 names still work
-  and warn, so old scripts keep running.  `Quantity.to_value` keeps its
-  snake_case on purpose, since that's AstroPy's name for the same thing.
-* **das_verify checks more.**  Index counts against the dataset rank, one
-  `units=` per composite, and `<sequence>` counts against the internal
-  shape, none of which an XML schema can express.
-* **Not yet:** ragged arrays (variable length records) still don't convert
-  to ndarrays.  das2C reads them; das3py stops at the conversion.
-
-## Upgrading from das2py
-
-As of version 3.0 the package is `das3`, named for the das3 stream format,
-and as of 3.0.6 it is distributed as `das3py`.  It runs on Python 2.7 and
-3.x alike.
-
-The `das2py` name on PyPI is now a small transitional package.  Upgrading
-it installs das3py and adds a `das2` alias, so `import das2` keeps working
-and returns the very same modules as `import das3`.  das3py on its own does
-not provide `import das2`.
+The PyPI packages are pre-built for Linux on x86_64, for Python 2.7 and
+3.9 through 3.15.  They need glibc 2.26 or newer (RHEL 8, Ubuntu 18.04
+and later) and pip 20.3 or newer.  If pip is older, upgrade it first:
 
 ```bash
-python -m pip install -U das2py   # existing installs: das3py plus the alias
-python -m pip install das3py      # new code: das3 only
+python -m pip install -U pip
 ```
 
-If you install das3py next to an old das2py 2.x instead of upgrading it,
-remove the old one first (`pip uninstall das2py`), as both provide a
-`das_verify` command.
+On other Linux systems, build from source as described in *Building and
+Installing from Source on Linux* below.  For Windows and macOS, see
+*Windows and macOS*.
 
-The alias raises a `PendingDeprecationWarning`, which Python hides by
-default.  To find the places in a project that still use the old name, run
-it with that warning promoted to an error:
+To check the install, run one of the examples.  It needs matplotlib and
+an internet connection:
 
 ```bash
-python -W error::PendingDeprecationWarning your_script.py
+python -m pip install matplotlib
+wget https://raw.githubusercontent.com/das-developers/das3py/main/examples/ex02_galileo_pws_spectra.py
+python ex02_galileo_pws_spectra.py
 ```
 
-Pre-build versions of das3py are available from Anaconda.  If you're working in an 
-Anoconda or Miniconda python 3 environment these are easier to install as no C 
-compiler is required.   To install the conda package run the command:
-```bash
-(base) $ conda install -c dasdevelopers das3py
-```
-The anaconda package automatically pulls in [das2C](https://anaconda.org/dasdevelopers/das2c), 
-[pycdf](https://anaconda.org/dasdevelopers/pycdf), and [pthreads4w](https://anaconda.org/dasdevelopers/pthreads4w) as needed.
-
-If this works then test using:
-```bash
-(base) $ wget https://raw.githubusercontent.com/das-developers/das3py/main/examples/ex02_galileo_pws_spectra.py
-(base) $ python ex02_galileo_pws_spectra.py
-```
-If this command produces a plot similar to the following\.\.\.
+It writes `ex02_galileo_pws_spectra.png`, which should look like this:
 
 <img src="https://raw.githubusercontent.com/das-developers/das3py/main/examples/ex02_galileo_pws_spectra.png" width="660" height="379">
-
-\.\.\.then das3py is installed, and you can skip building the software and
-head straight the example program below.
-
-## Building and Installing from Source on Linux
-
-Compilation and installation of das3py is regularly tested on Linux under
-both Python 2 (still) and Python 3. Testing on Windows and MacOS is less
-frequent, and then only under Python 3. The following packages are required
-to build das3py and all dependencies:
-
-1. Get system software packages.
-   
-   Rocky Linux or Compatable
-   ```bash
-   dnf install git gcc make curl expat-devel fftw-devel openssl-devel python3-devel
-   ```
-   Debian Linux or Compatable
-   ```bash
-   apt install gcc git make curl libexpat-dev libfftw3-dev libssl-dev python3-dev
-   ```
-
-2. Get the source, along with the das2C it goes with.
-   ```bash
-   git clone --recursive https://github.com/das-developers/das3py.git
-   ```
-   das2C is a git submodule in `deps/das2C`, pegged to the das2C release
-   this das3py was written and tested against.  If you cloned without
-   `--recursive` that directory is empty; fill it with
-   `git submodule update --init`.
-
-3. Build and test sources against a *specific* version of python. The
-   makefile will automatically find python if `PY_BIN` is not defined,
-   but providing an explicit path avoids confusion down the road.  For
-   old Python2 builds, PY_BIN is required, as Python3 will be built by
-   default.
-
-   ```bash
-   cd das3py
-   make PY_BIN=/path/to/python           # See PY_BIN note above
-   make PY_BIN=/path/to/python test      # optional, but recommended
-   make PY_BIN=/path/to/python examples  # optional, needs network access
-   ```
-
-   The first `make` also builds the bundled das2C, which downloads the
-   sources of NASA's CDF library.  To use a CDF you already have, set
-   `CDF_INC` and `CDF_LIB` as das2C's own build notes describe.
-
-   To build against some other das2C, a development checkout for example,
-   build that one yourself and name it.  das3py then leaves it alone:
-   ```bash
-   make DAS2C=/path/to/das2C PY_BIN=/path/to/python
-   ```
-
-4. Install into your desired python environment.
-   ```bash
-   /path/to/python -m pip install ./dist/das3py-*.whl
-
-   # or
-   
-   make PY_BIN=/path/to/python install
-   ```
-
-## Alternate builds
-
-To build from source under anaconda, or for Windows or MacOS hosts and
-to interact with PyPI see the alternate instructions in 
-[buildfiles/ReadMe.md](buildfiles/AltBuild.md)
 
 ## First program
 
@@ -182,7 +55,7 @@ header, datasets = src.get( {'time' : ('1997-05-07T15:00', '1997-05-07T17:00', 4
   * `get()` returns the stream header and a list of datasets.  This
     instrument sends three, one for each of its frequency bands.
   * Servers come and go.  The federated catalog provides stability for 
-    application code by maping URIs to data sources.
+    application code by mapping URIs to data sources.
   * Browse for URIs using a [das2 catalog](https://das2.org/browse) browser,
     or using das3py to get the root node (see [example 11](https://raw.githubusercontent.com/das-developers/das3py/main/examples/ex11_catalog_listings.py)).
 
@@ -218,10 +91,181 @@ for dataset in datasets:
 ax.set_yscale('log')
 pyplot.show() 
 ```
+
+### Vectors and other composites
+das3 streams can carry vectors, rotation matrices and other multi-part
+values as a single variable.  This query gets eight minutes of TRACERS-2
+magnetometer data:
+```python
+src = das3.get_source('site:/uiowa/tracers/tracers-2/l2/mag_16sps_delta')
+header, datasets = src.get( {'time' : ('2026-05-04T01:29:59', '2026-05-04T01:38:07')} )
+
+dB = datasets[0]['ts2_l2_mag_16sps_fac_deltab']['center']
+
+print(dB.array.shape)   # (7808, 3)
+print(dB.extShape())    # (7808,)  one value per record
+print(dB.intrShape())   # (3,)     each value is a 3-vector
+print(dB.labels)        # ['dBx', 'dBy', 'dBz']
+print(dB.ops)           # {'kind': 'vector', 'frame': 'TS2_FAC', 'system': 'cartesian', ...}
+```
+  * The external shape counts records in the dataset.  The internal shape
+    is the shape of each value.
+  * `dB.ops` says what the values are and which coordinate frame they
+    are in.
+  * The array is ordinary NumPy, so the field magnitude is
+    `numpy.linalg.norm(dB.array, axis=1)`.
+  * [Example 12](https://raw.githubusercontent.com/das-developers/das3py/main/examples/ex12_tracers_mag_delta.py)
+    plots the three components.
+
+## Anaconda Package
+
+A das3py conda package for Linux, Windows and macOS is planned.  The
+dasdevelopers channel still has the older das2py 3.0.4.
+
+## What changed in 3.0
+
+The short version, for people upgrading from 2.3:
+
+* **The package is `das3` now.**  It reads das3 streams.
+  `import das2` keeps working as an alias, installed by the das2py
+  transitional package which just points at this module.  Existing
+  das2py function names are aliased as needed in das3py, so old and
+  new code mix without a fuss.  The pip name is now
+  `das3py`.  Python 2.7 and 3.x are both supported, `das3` isn't a
+  reference to the interpreter version.
+
+* **Composite values.**  Vectors, rotation matrices, quaternions and complex
+  pairs come through as one variable, with an internal shape.  So a
+  vector over N records is an (N, 3) array with the external shape (N,) in
+  the dataset, and the internal shape (3,) within each value.  These
+  can be retrieved via `var.extShape()` and `var.intrShape()`.
+
+* **Mathematical Formalisms.**  Each variable is now tagged with metadata
+  denoting which math operations it supports.  For example a `point`
+  variable supports subtraction (a point - point = length) but not
+  addition.  The dict `var.ops` provides information on operations.
+
+* **Raw Storage.**  To get the compact raw storage for a variable, use
+  `var.storage()`, which gives the values without the dataset's broadcast.
+
+* **Sequences are materialized.**  A coordinate defined by a `<sequence>` in
+  the stream header arrives as a real array.
+
+* **Tidier names.**  `dir(das3)` shows the public API and nothing else.  A
+  few methods were renamed to match the rest: `DasTime.fromString`,
+  `DasTime.roundDoy`, `Dimension.hasProp` and `hasPropVal` (replacing
+  `propEq`) and `Source.infoProto`.  The 2.3 names still work
+  and warn, so old scripts keep running.  `Quantity.to_value` keeps its
+  snake_case on purpose, since it's source compatible with AstroPy's 
+  Quantities.
+
+* **das_verify checks more.**  Index counts against the dataset rank, one
+  `units=` per composite, and `<sequence>` counts against the internal
+  shape, none of which an XML schema can express.
+
+* **Not yet:** ragged arrays (variable length records) still don't convert
+  to ndarrays.  das2C reads them fully, but das3py stops at the conversion.
+
+## Upgrading from das2py
+
+As of version 3.0 the package is `das3`, named for the das3 stream format,
+and as of 3.0.6 it is distributed as `das3py`.  It runs on Python 2.7 and
+3.x alike.
+
+The `das2py` name on PyPI is now a small transitional package.  Upgrading
+it installs das3py and adds a `das2` alias, so `import das2` keeps working
+and returns the same modules as `import das3`.  Note that das3py on its own
+does not provide `import das2`.
+
+```bash
+python -m pip install -U das2py   # existing installs: das3py plus the alias
+python -m pip install das3py      # new code: das3 only
+```
+
+If you install das3py next to an **old** das2py **2.x** instead of upgrading it,
+remove the old one first (`pip uninstall das2py`), as both provide a
+`das_verify` command.
+
+The alias raises a `PendingDeprecationWarning`, which Python hides by
+default.  To find the places in a project that still use the old name, run
+it with that warning promoted to an error:
+
+```bash
+python -W error::PendingDeprecationWarning your_script.py
+```
+
+## Building and Installing from Source on Linux
+
+Compilation and installation of das3py is regularly tested on Linux under
+both Python 2 (still) and Python 3. The following packages are required
+to build das3py and all dependencies:
+
+1. Get system software packages.
+   
+   Red Hat Enterprise Linux or compatible (Rocky, Alma)
+   ```bash
+   dnf install git gcc make curl expat-devel fftw-devel openssl-devel python3-devel
+   ```
+   Debian or compatible (Ubuntu)
+   ```bash
+   apt install gcc git make curl libexpat-dev libfftw3-dev libssl-dev python3-dev
+   ```
+
+2. Get the source, along with the pegged das2C version.
+   ```bash
+   git clone --recursive https://github.com/das-developers/das3py.git
+   ```
+   das2C is a git submodule in `deps/das2C`, pegged to the das2C release
+   this das3py was written and tested against.  If you cloned without
+   `--recursive` that directory is empty, so fill it with
+   `git submodule update --init`.
+
+3. Build and test sources against a *specific* version of python. The
+   makefile will automatically find python if `PY_BIN` is not defined,
+   but providing an explicit path avoids confusion down the road.  For
+   old Python2 builds, PY_BIN is required, as Python3 will be built by
+   default.
+
+   ```bash
+   cd das3py
+   make PY_BIN=/path/to/python           # See PY_BIN note above
+   make PY_BIN=/path/to/python test      # optional, but recommended
+   make PY_BIN=/path/to/python examples  # optional, needs network access
+   ```
+
+   The first `make` also builds the bundled das2C, which downloads the
+   sources of NASA's CDF library.  To use a CDF you already have, set
+   `CDF_INC` and `CDF_LIB` as das2C's own build notes describe.
+
+   To build against some other das2C, a development checkout for example,
+   build that one yourself and reference it.  das3py does not alter an
+   external das2C build, it just uses it.
+   ```bash
+   make DAS2C=/path/to/das2C PY_BIN=/path/to/python
+   ```
+
+4. Install into your desired python environment.
+   ```bash
+   /path/to/python -m pip install ./dist/das3py-*.whl
+
+   # or
+   
+   make PY_BIN=/path/to/python install
+   ```
+
+## Windows and macOS
+
+das3py has been built on Windows and macOS before, and `setup.py` has
+branches for both, but this release has not been tested on either.  If
+you need it there, please ask on the issue tracker.
+
+The PyPI packages are built in a manylinux container with `make pypi`.
+The Makefile explains what that needs.
+
 ## Reporting bugs
 Please use the github.com [issue tracker](https://github.com/das-developers/das3py/issues) 
-report any problems with the library.  If you've fixed a bug, 1) thanks!, 2) please send
-a pull request so that your updates can be merged into the main project.
+to report any problems with the library.  If you've fixed a bug, thanks!  Please send
+a pull request so that your fix can be merged into the main project.
 
 
 

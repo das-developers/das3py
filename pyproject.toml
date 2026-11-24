@@ -1,6 +1,6 @@
 [project]
 name = "das3py"
-version = "3.0.6rc1"
+version = "3.0.6"
 # The numpy floor splits at 3.9, the oldest python with a wheel on PyPI.
 # Those wheels are compiled against numpy 2 with NPY_TARGET_VERSION set to
 # 1.19 (see setup.py), so they run on numpy 1.19.3 (the first with 3.9
