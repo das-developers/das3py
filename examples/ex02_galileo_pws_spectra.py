@@ -21,12 +21,16 @@ sId = "site:/uiowa/galileo/pws/survey_electric"
 print("Getting data source definition for %s"%sId)
 src = das3.get_source(sId)
 
-# Get data from the source.  Note, if no parameters are specifed the default
-# range and resolution in the source definition will be used
-print("Reading default example Galileo PWS E-Survey data...")
-(header, lDs) = src.get()
-ds = lDs[0]     # simple example, real code should check dataset list size
+# Get two hours of data at 4 second resolution.  With no query, get() uses
+# the source's first example, which can change when the catalog is edited.
+print("Reading Galileo PWS E-Survey data...")
+(header, lDs) = src.get({'time': ('1997-05-07T15:00', '1997-05-07T17:00', 4.0)})
 print("%d datasets returned"%len(lDs))
+
+# The instrument sends one dataset per frequency band, each with its own
+# frequency table.  The first one is used below to show how datasets are
+# laid out, and all of them are plotted.
+ds = lDs[0]
 
 # Optionally, print a summary of the dataset
 #print(ds)
@@ -59,18 +63,30 @@ specDens = ds['electric'] # that provide data values.
 
 # The pcolormesh plotter from matplotlib works well enough with this data model.
 # But a general re-binning plotter should be used instead.
-aX = time['center'].array
-aY = freq['center'].array
-aZ = specDens['center'].array
+# Each band is drawn on the same color scale, set from all of them.
+lZ = [d['electric']['center'].array for d in lDs]
+zMin = min(aZ.min() for aZ in lZ)
+zMax = max(aZ.max() for aZ in lZ)
 
 if specDens.hasPropVal('scaleType','log'):
-   clrscale = colors.LogNorm(vmin=aZ.min(), vmax=aZ.max())
+   clrscale = colors.LogNorm(vmin=zMin, vmax=zMax)
 else:
-   clrscale = None
+   clrscale = colors.Normalize(vmin=zMin, vmax=zMax)
 
 (fig, ax0) = pyplot.subplots()
 
-im = ax0.pcolormesh(aX, aY, aZ, norm=clrscale, cmap='jet' )
+for d in lDs:
+   aX = d['time']['center'].array
+   aY = d['frequency']['center'].array
+   aZ = d['electric']['center'].array
+   im = ax0.pcolormesh(aX, aY, aZ, norm=clrscale, cmap='jet' )
+
+# Each mesh pins the axis limits to its own edges, so with several the y
+# axis can end at one band's edge and hide the bands beyond it.  Fit the
+# axes to all of the data instead.
+ax0.use_sticky_edges = False
+ax0.margins(0)
+
 cbar = fig.colorbar(im, ax=ax0)
 
 if freq.hasPropVal('scaleType','log'):

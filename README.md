@@ -52,13 +52,13 @@ using das3py.
 ### Query a URI for reduced resolution data
 ```python
 import das3
-src = das3.get_source( 'tag:das2.org,2012:site:/uiowa/galileo/pws/survey_electric/das2' )
-header, datasets = src.get( {'time' : ('1997-05-07T15:00', '1997-05-07T17:00', 4.0)} )
+src = das3.get_source( 'tag:das2.org,2012:site:/uiowa/cassini/rpws/survey_keyparam/das2' )
+header, datasets = src.get( {'time' : ('2017-09-02', '2017-09-03')} )
 ```
   * `get()` returns the stream header and a list of datasets.  This
-    instrument sends three, one for each of its frequency bands.  Each
-    has the same three physical dimensions: time, frequency and electric
-    field.
+    source sends one: a day of Cassini RPWS electric field spectra, one
+    spectrum a minute at 73 frequencies.
+  * `print(src.info())` lists the query parameters a source takes.
   * `site:/...` is short for `tag:das2.org,2012:site:/...`.
   * Servers come and go.  The federated catalog provides stability for 
     application code by mapping URIs to data sources.
@@ -72,7 +72,7 @@ print(dataset)
 
 vX = dataset['time']['center']
 vY = dataset['frequency']['center']
-vZ = dataset['electric']['center'] 
+vZ = dataset['electric_specdens']['center']
 ```
   * Datasets contain dimensions. Dimensions contain variables. Each variable in a 
     dimension serves a purpose, the most common is to define the center point of a
@@ -82,21 +82,27 @@ vZ = dataset['electric']['center']
 
 ### Use Matplotlib to generate an image
 ```python
+import das3.mpl   # das2 label formatting for matplotlib
 import matplotlib.pyplot as pyplot
 import matplotlib.colors as colors
 
 fig, ax = pyplot.subplots()
-scaleZ = colors.LogNorm(vmin=1e-17, vmax=1e-4)   # One color scale for all bands
-
-for dataset in datasets:
-   vX = dataset['time']['center']
-   vY = dataset['frequency']['center']
-   vZ = dataset['electric']['center']
-   ax.pcolormesh(vX.array, vY.array, vZ.array, norm=scaleZ, cmap='jet')
-
+im = ax.pcolormesh(vX.array, vY.array, vZ.array, norm=colors.LogNorm(), cmap='jet')
 ax.set_yscale('log')
-pyplot.show() 
+fig.colorbar(im, label=das3.mpl.label(dataset['electric_specdens'].props['label']))
+fig.autofmt_xdate()
+
+ax.set_title(das3.mpl.label(header['props']['title']))
+ax.set_xlabel(das3.mpl.range_label(dataset['time']))
+ax.set_ylabel(das3.mpl.label(dataset['frequency'].props['label']))
+pyplot.show()
 ```
+  * The title and axis labels come from the stream.  `das3.mpl.label()`
+    converts das2 formatting codes, such as `!a` for superscript, to
+    matplotlib's, and `das3.mpl.range_label()` describes the time range.
+  * Times arrive as NumPy `datetime64` values, which matplotlib plots as
+    dates.
+  * Fill values arrive masked: `vZ.array` is a NumPy masked array.
 
 ### Vectors and other composites
 das3 streams can carry vectors, rotation matrices and other multi-part

@@ -137,7 +137,7 @@ def main(lArgs):
 	# Add the ephemeris row header
 	pyplot.gcf().text(0.02,0.068, sRowLbl)
 	
-	pyplot.xticks(ticks=dayTicks(sBeg), labels=lTicLbls)
+	pyplot.xticks(dayTicks(sBeg), lTicLbls)   # positional: matplotlib 2.2 (py2.7) lacks the keywords
 	ax0.xaxis.set_minor_locator(ticker.AutoMinorLocator(4))
 		
 	dt = das3.DasTime(sBeg)
