@@ -71,8 +71,9 @@ class DasTime(object):
 	@classmethod
 	def from_string(cls, sTime):
 		"""Deprecated spelling of fromString(), kept because two missions
-		call it from a dozen places.  Same warning category as 'import das2',
-		so one -W error::PendingDeprecationWarning run finds both."""
+		call it from a dozen places.  Same warning category as the other
+		das2py 2.3 names, so one -W error::PendingDeprecationWarning run
+		finds them all."""
 		warnings.warn(
 			"DasTime.from_string() is deprecated, use DasTime.fromString()",
 			PendingDeprecationWarning, stacklevel=2
@@ -734,8 +735,8 @@ class DasTime(object):
 		return "%04d-%03dT%s"%(nYear, nDoy, sTime)
 
 	def round_doy(self, nWhich):
-		"""Deprecated spelling of roundDoy(), the 2.3 name.  Removal planned
-		for 3.1."""
+		"""Deprecated spelling of roundDoy(), the das2py 2.3 name.  Removal
+		planned for 3.1."""
 		warnings.warn(
 			"DasTime.round_doy() is deprecated, use DasTime.roundDoy()",
 			PendingDeprecationWarning, stacklevel=2

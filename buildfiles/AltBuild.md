@@ -65,19 +65,6 @@ username: __token__
 password: (the 170+ character token value that you saved somewhere)
 ```
 
-### The das2py transitional package
-
-`make build` also writes the pure python das2py wheel, which holds only
-the `import das2` alias and requires das3py, into `dist_compat/`.  It is
-kept out of `dist/` on purpose, so the upload above publishes das3py alone.
-One `py2.py3-none-any` wheel serves every platform, so it is uploaded once,
-and only after the matching das3py is live on PyPI:
-
-```bash
-python -m build -o dist_compat compat/das2py   # if not built by make
-python -m twine upload dist_compat/*
-```
-
 ## Linux RPMs (outdated)
 
 Wheels and virtual environments are recommended, but if you want to build packages

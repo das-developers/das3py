@@ -4,8 +4,9 @@ physics research. To retrieve data, an HTTP GET request is posted to a das
 server by a client program and a self-describing stream of data values covering
 the requested time range, at the requested time resolution, is provided in the
 response body. This package, *das3py*, provides an efficient space physics data
-client for python.  Streams are parsed and stored as NumPy arrays using a C
-extension, avoiding data copies and conversions.
+client for python.  It reads both das2 and das3 streams, and das2 streams
+will be supported indefinitely.  Streams are parsed and stored as NumPy
+arrays using a C extension, avoiding data copies and conversions.
 
 das3py was published as *das2py* through version 3.0.4.  See *Upgrading
 from das2py* below.
@@ -131,10 +132,10 @@ dasdevelopers channel still has the older das2py 3.0.4.
 
 The short version, for people upgrading from 2.3:
 
-* **The package is `das3` now.**  It reads das3 streams.
-  Code that says `import das2` needs to say `import das3`.  The pip
-  name is now `das3py`.  Python 2.7 and 3.x are both supported, `das3` isn't a
-  reference to the interpreter version.
+* **The package is `das3` now.**  It reads das3 streams as well as das2
+  streams. Code that says `import das2` needs to say `import das3`.  The
+  pip name is now `das3py`.  Python 2.7 and 3.x are both supported,
+  `das3` isn't a reference to the interpreter version.
 
 * **Reads return the stream header too.**  `Source.get()` and the
   `read_*()` functions return a tuple, `(stream_header, datasets)`, not
@@ -174,9 +175,9 @@ The short version, for people upgrading from 2.3:
 
 ## Upgrading from das2py
 
-As of version 3.0 the package is `das3`, named for the das3 stream format,
-and as of 3.0.6 it is distributed as `das3py`.  It runs on Python 2.7 and
-3.x alike.
+As of version 3.0 the package is `das3`, named for the das3 stream format
+it added, and as of 3.0.6 it is distributed as `das3py`.  It still reads
+das2 streams, and runs on Python 2.7 and 3.x alike.
 
 Most das2py code needs two changes:
 

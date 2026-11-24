@@ -185,6 +185,5 @@ class SourceSet(Catalog):
 # was a 'Collection' node; SourceSet nodes took their place and nothing serves
 # the old ones.  An alias and not a subclass, so that isinstance(node,
 # Collection) in an old script is true for the nodes it gets today.  It can't
-# warn the way the renamed methods do, a name is not a call.  Keep it for a
-# while: 'import das2' scripts reach it as das2.Collection.
+# warn the way the renamed methods do, a name is not a call.
 Collection = SourceSet

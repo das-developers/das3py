@@ -13,8 +13,9 @@ das3py: The python das2 client package
 
 This module builds upon the functionality provided by the C-library, das2C_,
 to bring das2 and das3 client capabilities to C-python programs.  The package
-imports as ``das3``, named for the das3 stream format it reads; ``import das2``
-still works as an alias.  Functionality provided in this package:
+imports as ``das3``, named for the das3 stream format it added.  das2 streams
+are still read, and will be supported indefinitely.
+Functionality provided in this package:
 
 	#. Locates data sources across institutions using the
 	   `federated das2 data catalog`_.

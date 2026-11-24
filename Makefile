@@ -16,8 +16,8 @@
 #  PYPI_DIRTY        yes to let make pypi build from uncommitted changes
 
 # Find a way to get this from the manifest.  Until then the version is
-# also in pyproject.toml, setup.py (python 2 builds), das3/__init__.py and
-# compat/das2py/setup.cfg; keep all five in step.
+# also in pyproject.toml, setup.py (python 2 builds) and das3/__init__.py;
+# keep all four in step.
 DAS_PY_VER:=3.0.6
 
 ifeq ($(PY_BIN),)
@@ -77,11 +77,6 @@ PY_MAJ_VER_TOK:=$(shell $(PY_BIN) -c "import sys; print(sys.version_info[0])")
 PY_ABI_TOK:=$(shell $(PY_BIN) -c "import sys; f=getattr(sys,'abiflags',None); print(f if f is not None else 'm'+('u' if sys.maxunicode>65535 else ''))")
 
 WHEEL_FILE:=das3py-$(DAS_PY_VER)-cp$(PY_VER_TOK)-cp$(PY_VER_TOK)$(PY_ABI_TOK)-linux_x86_64.whl
-
-# Where the das2py name's last release, a pointer to das3py, is built (see
-# compat/das2py).  Kept apart from dist/ so it can't be uploaded with
-# das3py by mistake.
-COMPAT_DIST:=dist_compat
 
 # One pair of venvs per interpreter (build_py312_venv, test_py27_venv, ...),
 # not per major version.  A home directory shared between machines with
@@ -264,8 +259,8 @@ examples:
 	@echo "All examples ran without returning an error code"
 
 
-# Removing an old das2py first matters: 2.x and 3.0.4 own a das2 directory
-# and a das_verify script, which das3py installs too.
+# Removing an old das2py first matters: it owns a das_verify script, which
+# das3py installs too.
 install:
 	$(PY_BIN) -m pip uninstall -y --isolated --no-python-version-warning das2py das3py
 	$(PY_BIN) -m pip install --isolated --no-python-version-warning ./dist/$(WHEEL_FILE)
@@ -309,10 +304,10 @@ endif
 # distclean removes the bundled das2C's build as well, but not the CDF
 # sources it downloaded; for that: make -C deps/das2C distclean
 clean:
-	-rm -r dist $(COMPAT_DIST) test_*_venv build *.egg-info
+	-rm -r dist test_*_venv build *.egg-info
 
 distclean:
-	-rm -r dist $(COMPAT_DIST) test_*_venv build_*_venv build build.pypi *.egg-info
+	-rm -r dist test_*_venv build_*_venv build build.pypi *.egg-info
 ifeq ($(DAS2C_BUNDLED),yes)
 	-if [ -f $(DAS2C_SUB)/Makefile ] ; then $(MAKE) -C $(DAS2C_SUB) clean ; fi
 endif

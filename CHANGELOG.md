@@ -17,11 +17,13 @@ das2py was the first v3 style module, written ahead of das2C v3.0.  das2C
 has since caught up, so most of the application interface from 2.3 is
 unchanged.  The bigger differences are the package name, a handful of
 method renames, and what you can read: das3 streams and composite values.
+das2 streams read as before, and will be supported indefinitely.
 
 ### Upgrading from das2py
 
 - **The import package is `das3`** and the C extension is `_das3`.  The
-  name is for the das3 stream format, not the Python version.
+  name is for the das3 stream format it added, not the Python version.
+  das2 streams are still read.
 
 - **The pip and conda name is `das3py`.**  There is no `das2` alias:
   `import das2` becomes `import das3`, and `das2.` becomes `das3.`.

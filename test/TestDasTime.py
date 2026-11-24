@@ -97,7 +97,7 @@ class TestDasTime(unittest.TestCase):
 
 	def test_from_string_alias(self):
 		# The old spelling still parses, and says so exactly once, in the
-		# same category the das2 import alias uses
+		# same category the other das2py 2.3 names use
 		import warnings
 		with warnings.catch_warnings(record=True) as lWarn:
 			warnings.simplefilter('always')
